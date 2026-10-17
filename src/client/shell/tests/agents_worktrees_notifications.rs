@@ -1253,16 +1253,14 @@ fn worktree_create_previews_the_endpoint_owned_checkout_path() {
     assert!(text.contains("create and open"));
     assert!(frame.cursor.as_ref().is_some_and(|cursor| cursor.visible));
 
-    assert!(state
-        .handle_input_bytes(b"feature/client-shell")
-        .actions
-        .is_empty());
+    assert!(state.handle_input_bytes(b"Login Google").actions.is_empty());
     assert!(matches!(
         &state.overlay,
         Some(ClientShellOverlay::WorktreeCreate(create))
             if create.checkout_path
-                == "/tmp/herdr-worktrees/repo/feature-client-shell"
+                == "/tmp/herdr-worktrees/repo/feat-login-google"
     ));
+    state.handle_input_bytes(b"\tmain");
     let submit = state.handle_input_bytes(b"\r");
     let [ClientShellAction::Endpoint { request, .. }] = &submit.actions[..] else {
         panic!("worktree create should use endpoint API");
@@ -1271,7 +1269,9 @@ fn worktree_create_previews_the_endpoint_owned_checkout_path() {
         &request.method,
         crate::api::schema::Method::WorktreeCreate(params)
             if params.workspace_id.as_deref() == Some("ws_1")
-                && params.branch.as_deref() == Some("feature/client-shell")
+                && params.branch.as_deref() == Some("feat/login-google")
+                && params.label.as_deref() == Some("feat/login-google")
+                && params.base.as_deref() == Some("main")
                 && params.path.is_none()
                 && !params.focus
     ));
@@ -1305,6 +1305,99 @@ fn unavailable_worktree_create_does_not_wedge_the_overlay() {
         .visible_endpoint_notice
         .as_ref()
         .is_some_and(|notice| notice.key.code == "worktree.create"));
+}
+
+fn named_worktree_state() -> ClientShellState {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.handle_worktree_endpoint_result(
+        PendingEndpointKind::PrepareWorktreeCreate {
+            workspace_id: "ws_1".into(),
+        },
+        Ok(worktree_list_result(None)),
+        &mut ClientShellInput::default(),
+    );
+    state
+}
+
+#[test]
+fn hidden_worktree_form_cannot_submit_and_recovers_after_resize() {
+    for (cols, rows) in [(106, 10), (106, 14), (8, 20), (2, 2)] {
+        let mut state = named_worktree_state();
+        state.handle_input_bytes(b"resize-regression");
+        state.compose(cols, rows);
+        assert!(state
+            .hits
+            .worktree_fields
+            .iter()
+            .all(|(rect, _)| rect.is_empty()));
+        let submit = state.handle_input_bytes(b"\r");
+        assert!(submit.actions.is_empty());
+        assert!(
+            matches!(&state.overlay, Some(ClientShellOverlay::WorktreeCreate(create)) if !create.creating)
+        );
+
+        state.compose(106, 30).expect("visible creation form");
+        let submit = state.handle_input_bytes(b"\r");
+        assert!(
+            matches!(&submit.actions[..], [ClientShellAction::Endpoint { request, .. }]
+            if matches!(&request.method, crate::api::schema::Method::WorktreeCreate(params)
+                if params.branch.as_deref() == Some("feat/resize-regression")))
+        );
+    }
+    let mut state = named_worktree_state();
+    state.compose(106, 10).unwrap();
+    state.handle_input_bytes(b"\x1b");
+    assert!(state.overlay.is_none(), "cancel stays available");
+}
+
+#[test]
+fn named_worktree_fields_support_mouse_and_normalized_preview() {
+    let mut state = named_worktree_state();
+    state
+        .compose(106, 14)
+        .expect("short terminal still produces a frame");
+    assert!(!state.hits.overlay_cancel.is_empty());
+    state.handle_input_bytes("Correção da sessão".as_bytes());
+    state.compose(106, 20).expect("compact creation form");
+    assert_eq!(state.hits.worktree_fields.len(), 3);
+    let type_field = state.hits.worktree_fields[0].0;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: type_field.x,
+        row: type_field.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.handle_input_bytes(b"bug");
+    let submit = state.handle_input_bytes(b"\r");
+    assert!(
+        matches!(&submit.actions[..], [ClientShellAction::Endpoint { request, .. }]
+        if matches!(&request.method, crate::api::schema::Method::WorktreeCreate(params)
+            if params.branch.as_deref() == Some("bug/correcao-da-sessao") && params.base.as_deref() == Some("HEAD")))
+    );
+}
+
+#[test]
+fn named_worktree_rejects_empty_names_and_registered_collisions_before_submit() {
+    for name in ["", "---", "日本語"] {
+        let mut state = named_worktree_state();
+        state.handle_input_bytes(name.as_bytes());
+        let submit = state.handle_input_bytes(b"\r");
+        assert!(submit.actions.is_empty());
+        assert!(
+            matches!(&state.overlay, Some(ClientShellOverlay::WorktreeCreate(create)) if create.error.is_some() && !create.creating)
+        );
+    }
+    let mut state = named_worktree_state();
+    if let Some(ClientShellOverlay::WorktreeCreate(create)) = state.overlay.as_mut() {
+        create.existing[0].branch = Some("feat/existing".into());
+    }
+    state.handle_input_bytes(b"Existing");
+    assert!(
+        matches!(&state.overlay, Some(ClientShellOverlay::WorktreeCreate(create)) if create.error.as_deref().is_some_and(|error| error.contains("already exists")))
+    );
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
 }
 
 #[test]

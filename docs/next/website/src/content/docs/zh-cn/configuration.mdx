@@ -102,6 +102,8 @@ new_cwd = "follow"
 directory = "~/.herdr/worktrees"
 ```
 
+终端创建表单可编辑 type、name 和 base ref。例如 `feat` 与 `Login Google` 会预览分支 `feat/login-google` 和目录 `feat-login-google`。type 可自由填写，建议值包括 `feat`、`fix`、`bug`、`refactor`、`chore`。空格和标点转换为连字符，常见拉丁字母重音会被移除。base 默认使用 `HEAD`。表单会提前提示与已登记检出目录的冲突，最终由 Git 验证操作。CLI 的分支语法和使用已有本地分支的行为保持不变。
+
 Herdr 会在 `<directory>/<repo>/<branch-slug>` 下创建检出。若要使用同级目录风格的检出，请将其设置为 `~/Projects/herdr-worktrees` 这样的目录。应用配置时，相对路径会解析为绝对路径。
 
 Git 工作区行提供 worktree 操作。`New worktree` 会创建检出：如果输入的分支已存在，则检出该本地分支，否则创建该分支；随后将其作为新的 Herdr 工作区打开，并归组到来源工作区下。`Open worktree...` 会列出该仓库现有的 Git worktree 检出；选择已打开的检出会聚焦它，选择尚未打开的检出会在同一组中打开它。

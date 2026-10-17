@@ -1,5 +1,27 @@
 use super::*;
 
+pub(super) fn normalize_branch_part(value: &str) -> String {
+    let mut slug = String::new();
+    for ch in value.chars().flat_map(char::to_lowercase) {
+        let ch = match ch {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            'ñ' => 'n',
+            ch => ch,
+        };
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+        } else if !slug.ends_with('-') && !slug.is_empty() {
+            slug.push('-');
+        }
+    }
+    slug.trim_end_matches('-').to_owned()
+}
+
 fn checkout_path_preview(root: &str, repo: &str, branch: &str) -> String {
     // This is an endpoint path, not a path on the machine drawing the dialog.
     let separator = if !root.starts_with('/') && root.contains('\\') {
@@ -24,7 +46,7 @@ impl ClientShellState {
     pub(super) fn insert_worktree_overlay_text(&mut self, text: &str) -> bool {
         match self.overlay.as_mut() {
             Some(ClientShellOverlay::WorktreeCreate(create)) if !create.creating => {
-                if create.branch.insert(text) {
+                if create.editor().insert(text) {
                     self.sync_worktree_create_path();
                 }
                 true
@@ -60,7 +82,13 @@ impl ClientShellState {
                 if !creating {
                     if let Some(ClientShellOverlay::WorktreeCreate(create)) = self.overlay.as_mut()
                     {
-                        if let Some(content_changed) = create.branch.handle_key(key) {
+                        if matches!(code, KeyCode::Tab | KeyCode::BackTab) {
+                            create.field =
+                                (create.field + if code == KeyCode::Tab { 1 } else { 2 }) % 3;
+                            outcome.repaint = true;
+                            return true;
+                        }
+                        if let Some(content_changed) = create.editor().handle_key(key) {
                             if content_changed {
                                 self.sync_worktree_create_path();
                             }
@@ -235,12 +263,32 @@ impl ClientShellState {
         let Some(ClientShellOverlay::WorktreeCreate(create)) = self.overlay.as_mut() else {
             return;
         };
-        create.checkout_path =
-            checkout_path_preview(&worktree_directory, &create.repo_name, &create.branch);
-        create.error = None;
+        create.checkout_path = checkout_path_preview(
+            &worktree_directory,
+            &create.repo_name,
+            &create.branch_name(),
+        );
+        create.error = create
+            .existing
+            .iter()
+            .any(|entry| {
+                entry.branch.as_deref() == Some(create.branch_name().as_str())
+                    || entry.path == create.checkout_path
+            })
+            .then(|| "a checkout already exists; use open worktree".to_owned());
     }
 
     pub(super) fn submit_worktree_create(&mut self, outcome: &mut ClientShellInput) {
+        // A rendered enlarge/cancel notice must not submit an invisible form.
+        if self.last_composed_size.is_some()
+            && !self
+                .hits
+                .worktree_fields
+                .iter()
+                .any(|(rect, _)| !rect.is_empty())
+        {
+            return;
+        }
         let Some(worktree_directory) = self.endpoint_worktree_directory() else {
             return;
         };
@@ -250,26 +298,39 @@ impl ClientShellState {
         if create.creating {
             return;
         }
-        let branch = create.branch.trim().to_owned();
-        if branch.is_empty() {
-            create.error = Some("branch is required".to_owned());
+        if normalize_branch_part(create.kind.trim()).is_empty()
+            || normalize_branch_part(create.branch.trim()).is_empty()
+            || create.base.trim().is_empty()
+        {
+            create.error = Some("type, name and base are required".to_owned());
             outcome.repaint = true;
             return;
         }
+        create.kind.trim_and_accept();
         create.branch.trim_and_accept();
+        create.base.trim_and_accept();
+        let branch = create.branch_name();
         create.checkout_path =
             checkout_path_preview(&worktree_directory, &create.repo_name, &branch);
+        if create.existing.iter().any(|entry| {
+            entry.branch.as_deref() == Some(&branch) || entry.path == create.checkout_path
+        }) {
+            create.error = Some("a checkout already exists; use open worktree".to_owned());
+            outcome.repaint = true;
+            return;
+        }
         create.creating = true;
         create.error = None;
         let workspace_id = create.source_workspace_id.clone();
+        let base = create.base.trim().to_owned();
         if !self.push_endpoint_method_with_kind(
             crate::api::schema::Method::WorktreeCreate(crate::api::schema::WorktreeCreateParams {
                 workspace_id: Some(workspace_id),
                 cwd: None,
+                label: Some(branch.clone()),
                 branch: Some(branch),
-                base: Some("HEAD".to_owned()),
+                base: Some(base),
                 path: None,
-                label: None,
                 focus: false,
                 trust_repository: false,
             }),
@@ -376,23 +437,23 @@ impl ClientShellState {
         match (kind, result) {
             (
                 PendingEndpointKind::PrepareWorktreeCreate { workspace_id },
-                Ok(ResponseResult::WorktreeList { source, .. }),
+                Ok(ResponseResult::WorktreeList { source, worktrees }),
             ) => {
-                let seed = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|duration| duration.as_micros().min(u128::from(u64::MAX)) as u64)
-                    .unwrap_or(0);
-                let branch = crate::worktree::generated_branch_slug(seed);
+                let branch = "feat/";
                 let Some(worktree_directory) = self.endpoint_worktree_directory() else {
                     return false;
                 };
                 let checkout_path =
-                    checkout_path_preview(&worktree_directory, &source.repo_name, &branch);
+                    checkout_path_preview(&worktree_directory, &source.repo_name, branch);
                 self.overlay = Some(ClientShellOverlay::WorktreeCreate(
                     ClientWorktreeCreateOverlay {
                         source_workspace_id: workspace_id,
                         repo_name: source.repo_name,
-                        branch: TextEditor::new(&branch, true),
+                        branch: TextEditor::new("", false),
+                        kind: TextEditor::new("feat", true),
+                        base: TextEditor::new("HEAD", true),
+                        field: 1,
+                        existing: worktrees,
                         checkout_path,
                         error: None,
                         creating: false,
@@ -549,6 +610,19 @@ impl ClientShellState {
 #[cfg(test)]
 mod path_tests {
     use super::checkout_path_preview;
+
+    #[test]
+    fn branch_parts_normalize_user_names_without_random_identifiers() {
+        for (value, expected) in [
+            (" Login Google ", "login-google"),
+            ("Correção da sessão", "correcao-da-sessao"),
+            ("A///B..C@{D}", "a-b-c-d"),
+            ("---", ""),
+            ("日本語", ""),
+        ] {
+            assert_eq!(super::normalize_branch_part(value), expected);
+        }
+    }
 
     #[test]
     fn endpoint_path_style_is_independent_of_the_client_os() {

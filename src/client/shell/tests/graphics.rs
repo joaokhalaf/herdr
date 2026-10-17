@@ -276,6 +276,10 @@ fn every_dialog_and_menu_occludes_its_panel_not_the_whole_screen() {
             filter: None,
         }),
         ClientShellOverlay::WorktreeCreate(ClientWorktreeCreateOverlay {
+            kind: TextEditor::new("feat", false),
+            base: TextEditor::new("HEAD", false),
+            field: 1,
+            existing: Vec::new(),
             source_workspace_id: "ws_1".into(),
             repo_name: "repo".into(),
             branch: "branch".into(),

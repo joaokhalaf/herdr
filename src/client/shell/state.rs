@@ -125,6 +125,7 @@ pub(super) struct ShellHitMap {
     pub(super) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) worktree_search: Rect,
     pub(super) worktree_rows: Vec<(Rect, usize)>,
+    pub(super) worktree_fields: Vec<(Rect, usize)>,
     pub(super) help_popup: Rect,
     pub(super) help_scrollbar: Rect,
     pub(super) help_scroll_metrics: Option<crate::pane::ScrollMetrics>,
@@ -427,9 +428,29 @@ pub(super) struct ClientWorktreeCreateOverlay {
     pub(super) source_workspace_id: String,
     pub(super) repo_name: String,
     pub(super) branch: TextEditor,
+    pub(super) kind: TextEditor,
+    pub(super) base: TextEditor,
+    pub(super) field: usize,
+    pub(super) existing: Vec<crate::api::schema::WorktreeInfo>,
     pub(super) checkout_path: String,
     pub(super) error: Option<String>,
     pub(super) creating: bool,
+}
+
+impl ClientWorktreeCreateOverlay {
+    pub(super) fn editor(&mut self) -> &mut TextEditor {
+        match self.field {
+            0 => &mut self.kind,
+            2 => &mut self.base,
+            _ => &mut self.branch,
+        }
+    }
+
+    pub(super) fn branch_name(&self) -> String {
+        let kind = super::worktrees::normalize_branch_part(self.kind.trim());
+        let name = super::worktrees::normalize_branch_part(self.branch.trim());
+        format!("{kind}/{name}")
+    }
 }
 
 #[derive(Debug, Clone)]

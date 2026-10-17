@@ -104,6 +104,8 @@ directory = "~/.herdr/worktrees"
 
 Herdr creates checkouts under `<directory>/<repo>/<branch-slug>`. For sibling-style checkouts, set this to a directory such as `~/Projects/herdr-worktrees`. Relative values are resolved to an absolute path when the app applies the config.
 
+The terminal creation dialog has editable type, name, and base-ref fields. For example, type `feat` and name `Login Google` preview `feat/login-google` and a `feat-login-google` checkout folder. Types are free text (`feat`, `fix`, `bug`, `refactor`, and `chore` are suggestions). Spaces and punctuation become hyphens; common Latin accents are folded. The base defaults to `HEAD`, so repositories using either `main` or `master` work. The dialog warns about registered checkout collisions before submission; Git validates the final operation. CLI creation keeps its existing branch syntax and existing-local-branch behavior.
+
 Worktree actions are available from Git workspace rows. `New worktree` creates a checkout. It checks out an existing local branch when the entered branch exists; otherwise, it creates the branch. It then opens the checkout as a new Herdr workspace and groups it under the source workspace. `Open worktree...` lists existing Git worktree checkouts for that repo. Choosing an already-open checkout focuses it, while choosing a closed checkout opens it in the same group.
 
 Grouped worktrees still behave like normal Herdr workspaces: they can be focused, renamed, closed, and contain their own tabs and panes. The parent row is the original workspace. Closing the parent row closes the whole Herdr group, but it does not delete checkout folders or branches.
