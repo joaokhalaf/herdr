@@ -1,5 +1,8 @@
 use super::*;
 
+mod settings_preview;
+use settings_preview::render_layout_preview;
+
 fn choice_style(selected: bool, palette: &Palette) -> Style {
     if selected {
         Style::default()
@@ -37,20 +40,32 @@ pub(super) fn render_settings_overlay(
     buffer: &mut Buffer,
     settings: &ClientSettingsOverlay,
     integration_updates_available: bool,
-    palette: &Palette,
+    config: &ClientShellConfig,
+    can_edit_borders: bool,
 ) -> Option<OverlayRender> {
+    let palette = &config.palette;
     let integration_height = 14u16
         .saturating_add(settings.integrations.len().max(1) as u16)
         .saturating_add(settings.integration_messages.len().min(6) as u16);
+    let visual = matches!(
+        settings.section,
+        ClientSettingsSection::Appearance | ClientSettingsSection::Sidebar
+    );
     let height = if settings.section == ClientSettingsSection::Integrations {
         integration_height.max(22)
+    } else if visual {
+        if buffer.area.width < 74 {
+            34
+        } else {
+            28
+        }
     } else {
         22
     };
-    let popup = popup(buffer.area, 76, height)?;
+    let popup = popup(buffer.area, if visual { 104 } else { 76 }, height)?;
     let inner = panel(buffer, popup, palette.accent, palette.panel_bg)?;
     if inner.width < 20 || inner.height < 8 {
-        return None;
+        return Some(render_small_settings(buffer, popup, inner, palette));
     }
 
     put_text(
@@ -71,6 +86,7 @@ pub(super) fn render_settings_overlay(
             .iter()
             .any(|integration| integration.state == crate::api::schema::IntegrationState::Outdated);
     let mut tab_x = inner.x;
+    let mut tab_y = inner.y + 1;
     let mut tab_hits = Vec::new();
     for section in ClientSettingsSection::ALL {
         let badge = *section == ClientSettingsSection::Integrations && integration_badge;
@@ -79,8 +95,12 @@ pub(super) fn render_settings_overlay(
         } else {
             format!(" {} ", section.label())
         };
-        let width = display_width(&label).min(inner.right().saturating_sub(tab_x));
-        let rect = Rect::new(tab_x, inner.y + 1, width, 1);
+        if tab_x > inner.x && tab_x.saturating_add(display_width(&label)) > inner.right() {
+            tab_x = inner.x;
+            tab_y += 1;
+        }
+        let width = display_width(&label).min(inner.width);
+        let rect = Rect::new(tab_x, tab_y, width, 1);
         let active = *section == settings.section;
         let style = if active {
             Style::default()
@@ -107,14 +127,11 @@ pub(super) fn render_settings_overlay(
         }
         tab_hits.push((rect, *section));
         tab_x = tab_x.saturating_add(width.saturating_add(1));
-        if tab_x >= inner.right() {
-            break;
-        }
     }
     put_text(
         buffer,
         inner.x,
-        inner.y + 2,
+        tab_y + 1,
         inner.width,
         &"─".repeat(inner.width as usize),
         Style::default().fg(palette.surface0).bg(palette.panel_bg),
@@ -122,12 +139,70 @@ pub(super) fn render_settings_overlay(
 
     let content = Rect::new(
         inner.x,
-        inner.y + 4,
+        tab_y + 3,
         inner.width,
-        inner.height.saturating_sub(7),
+        inner.bottom().saturating_sub(3).saturating_sub(tab_y + 3),
     );
     let mut choice_hits = Vec::new();
+    if content.height < 4 {
+        return Some(render_small_settings(buffer, popup, inner, palette));
+    }
+    let (choices_area, preview_area) = if visual && content.width >= 68 {
+        let width = content.width / 2;
+        (
+            Rect::new(content.x, content.y, width, content.height),
+            Some(Rect::new(
+                content.x + width + 2,
+                content.y,
+                content.width - width - 2,
+                content.height,
+            )),
+        )
+    } else if visual && content.height >= 22 {
+        (
+            Rect::new(content.x, content.y, content.width, 10),
+            Some(Rect::new(
+                content.x,
+                content.y + 11,
+                content.width,
+                content.height - 11,
+            )),
+        )
+    } else {
+        (content, None)
+    };
     match settings.section {
+        ClientSettingsSection::Appearance => {
+            let borders = match config.pane_borders {
+                crate::config::PaneBordersConfig::Auto => "auto",
+                crate::config::PaneBordersConfig::Always => "always",
+                crate::config::PaneBordersConfig::Off => "off",
+            };
+            render_choice_section(
+                buffer,
+                choices_area,
+                "borders and list spacing",
+                "preview selection; enter applies",
+                &[
+                    &format!("pane borders: {borders} (cycle)"),
+                    if config.pane_outer_borders {
+                        "outer borders: shown → hide"
+                    } else {
+                        "outer borders: hidden → show"
+                    },
+                    &format!(
+                        "compact (0 rows; current: {}/{})",
+                        config.agents.row_gap, config.spaces.row_gap
+                    ),
+                    "comfortable (1 blank row)",
+                    "roomy (2 blank rows)",
+                    "restore default borders and spacing",
+                ],
+                settings.selected,
+                palette,
+                &mut choice_hits,
+            );
+        }
         ClientSettingsSection::Theme => {
             let visible = usize::from(content.height);
             let scroll = settings.selected.saturating_sub(visible.saturating_sub(1));
@@ -170,6 +245,32 @@ pub(super) fn render_settings_overlay(
                 &mut choice_hits,
             );
         }
+        ClientSettingsSection::Sidebar => {
+            render_choice_section(
+                buffer,
+                choices_area,
+                "sidebar layout",
+                "preview selection; enter or click applies",
+                &[
+                    &format!("narrower (current: {} columns)", settings.sidebar_width),
+                    &format!("wider (current: {} columns)", settings.sidebar_width),
+                    if config.show_sidebar_agents {
+                        "agents: shown → hide"
+                    } else {
+                        "agents: hidden → show"
+                    },
+                    if config.show_sidebar_spaces {
+                        "spaces / worktrees: shown → hide"
+                    } else {
+                        "spaces / worktrees: hidden → show"
+                    },
+                    "restore default sidebar",
+                ],
+                settings.selected,
+                palette,
+                &mut choice_hits,
+            );
+        }
         ClientSettingsSection::Sound => {
             render_choice_section(
                 buffer,
@@ -197,6 +298,10 @@ pub(super) fn render_settings_overlay(
         ClientSettingsSection::Integrations => {
             render_integrations(buffer, content, settings, palette);
         }
+    }
+
+    if let Some(area) = preview_area {
+        render_layout_preview(buffer, area, settings, config, can_edit_borders);
     }
 
     let installable = settings
@@ -254,6 +359,40 @@ pub(super) fn render_settings_overlay(
     })
 }
 
+fn render_small_settings(
+    buffer: &mut Buffer,
+    popup: Rect,
+    inner: Rect,
+    palette: &Palette,
+) -> OverlayRender {
+    ratatui::widgets::Widget::render(ratatui::widgets::Clear, inner, buffer);
+    let style = Style::default().fg(palette.text).bg(palette.panel_bg);
+    buffer.set_style(inner, style);
+    if !inner.is_empty() {
+        put_text(
+            buffer,
+            inner.x,
+            inner.y,
+            inner.width,
+            " settings: enlarge terminal",
+            style,
+        );
+    }
+    let close = Rect::new(
+        inner.x,
+        inner.bottom().saturating_sub(1),
+        inner.width.min(12),
+        u16::from(!inner.is_empty()),
+    );
+    button(buffer, close, " esc close ", style);
+    OverlayRender {
+        area: popup,
+        cancel: close,
+        settings_popup: popup,
+        ..OverlayRender::default()
+    }
+}
+
 fn render_choice_section(
     buffer: &mut Buffer,
     area: Rect,
@@ -283,9 +422,18 @@ fn render_choice_section(
         description,
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
-    let row_gap = u16::from(choices.len() > 2);
-    for (index, choice) in choices.iter().enumerate() {
-        let y = area.y + 3 + index as u16 * (1 + row_gap);
+    let row_gap = u16::from(choices.len() > 2 && usize::from(area.height) >= 2 + choices.len() * 2);
+    let visible =
+        usize::from(area.height.saturating_sub(3).saturating_add(row_gap) / (1 + row_gap));
+    let start = selected.saturating_sub(visible.saturating_sub(1));
+    for (offset, (index, choice)) in choices
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .enumerate()
+    {
+        let y = area.y + 3 + offset as u16 * (1 + row_gap);
         if y >= area.bottom() {
             break;
         }

@@ -114,6 +114,12 @@ impl ClientShellConfig {
         let theme_runtime = crate::app::client_theme_runtime_from_config(config);
         Self {
             sidebar_width: config.ui.sidebar_width,
+            show_sidebar_agents: config.ui.show_sidebar_agents,
+            show_sidebar_spaces: config.ui.show_sidebar_spaces,
+            pane_borders: config.ui.pane_borders,
+            pane_outer_borders: config.ui.pane_outer_borders,
+            local_server_config_owned: std::env::var_os(crate::remote::REMOTE_PREFERENCES_ENV_VAR)
+                .is_none(),
             sidebar_min_width: config.ui.sidebar_min_width,
             sidebar_max_width: config.ui.sidebar_max_width,
             sidebar_start_collapsed: config.ui.sidebar_start_collapsed,
@@ -213,7 +219,11 @@ impl ClientShellConfig {
             .filter(|(target, session)| !target.is_empty() && !session.is_empty());
         match identity {
             Some((target, session)) => {
-                self.with_preferences_path(preferences::path_for_remote_endpoint(&target, &session))
+                let mut config = self.with_preferences_path(preferences::path_for_remote_endpoint(
+                    &target, &session,
+                ));
+                config.local_server_config_owned = false;
+                config
             }
             None => self.with_local_endpoint(socket_path),
         }
@@ -342,6 +352,10 @@ impl ClientShellConfig {
                 let ui = &config.ui;
                 diagnostics.extend(ui.sound.diagnostics());
                 self.sidebar_width = ui.sidebar_width;
+                self.show_sidebar_agents = ui.show_sidebar_agents;
+                self.show_sidebar_spaces = ui.show_sidebar_spaces;
+                self.pane_borders = ui.pane_borders;
+                self.pane_outer_borders = ui.pane_outer_borders;
                 self.sidebar_min_width = ui.sidebar_min_width;
                 self.sidebar_max_width = ui.sidebar_max_width;
                 self.sidebar_collapsed_mode = ui.sidebar_collapsed_mode;
@@ -400,7 +414,9 @@ impl ClientShellConfig {
             };
         }
 
-        let sidebar_width = if sidebar_collapsed {
+        let sidebar_width = if !self.show_sidebar_agents && !self.show_sidebar_spaces {
+            0
+        } else if sidebar_collapsed {
             match self.sidebar_collapsed_mode {
                 SidebarCollapsedModeConfig::Compact => 4,
                 SidebarCollapsedModeConfig::Hidden => 0,

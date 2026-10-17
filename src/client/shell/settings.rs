@@ -36,8 +36,10 @@ impl ClientShellState {
         self.overlay = Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
             section: ClientSettingsSection::Theme,
             selected: theme_index(&self.config.theme_name),
+            sidebar_width: self.sidebar_width,
             original_theme_name: self.config.theme_name.clone(),
             original_palette: self.config.palette.clone(),
+            original_theme_runtime: Box::new(self.config.theme_runtime.clone()),
             integrations: Vec::new(),
             integration_messages: Vec::new(),
             loading_integrations: false,
@@ -48,6 +50,8 @@ impl ClientShellState {
     fn selected_index_for_settings_section(&self, section: ClientSettingsSection) -> usize {
         match section {
             ClientSettingsSection::Theme => theme_index(&self.config.theme_name),
+            ClientSettingsSection::Appearance => 0,
+            ClientSettingsSection::Sidebar => 0,
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
@@ -97,6 +101,8 @@ impl ClientShellState {
         match self.overlay.as_ref() {
             Some(ClientShellOverlay::Settings(settings)) => match settings.section {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
+                ClientSettingsSection::Appearance => 6,
+                ClientSettingsSection::Sidebar => 5,
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => settings.integrations.len(),
@@ -116,9 +122,7 @@ impl ClientShellState {
         }
         settings.selected = (settings.selected as isize + delta)
             .clamp(0, count.saturating_sub(1) as isize) as usize;
-        if settings.section == ClientSettingsSection::Theme {
-            self.preview_selected_theme();
-        }
+        self.preview_settings_selection();
     }
 
     pub(super) fn select_settings_choice(&mut self, index: usize) {
@@ -128,13 +132,14 @@ impl ClientShellState {
                 settings.selected = index.min(count - 1);
             }
         }
-        if matches!(
-            self.overlay,
-            Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
-                section: ClientSettingsSection::Theme,
-                ..
-            }))
-        ) {
+        self.preview_settings_selection();
+    }
+
+    fn preview_settings_selection(&mut self) {
+        let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_ref() else {
+            return;
+        };
+        if settings.section == ClientSettingsSection::Theme {
             self.preview_selected_theme();
         }
     }
@@ -157,6 +162,7 @@ impl ClientShellState {
         };
         self.config.theme_name = settings.original_theme_name;
         self.config.palette = settings.original_palette;
+        self.config.theme_runtime = *settings.original_theme_runtime;
     }
 
     fn save_settings_edit(
@@ -170,13 +176,20 @@ impl ClientShellState {
             return false;
         }
         self.reload_client_config();
-        self.push_endpoint_method_with_kind(
-            crate::api::schema::Method::ServerReloadConfig(
-                crate::api::schema::EmptyParams::default(),
-            ),
-            PendingEndpointKind::ReloadConfig,
-            outcome,
-        );
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.original_theme_name = self.config.theme_name.clone();
+            settings.original_palette = self.config.palette.clone();
+            *settings.original_theme_runtime = self.config.theme_runtime.clone();
+        }
+        if edit.requires_server_reload() {
+            self.push_endpoint_method_with_kind(
+                crate::api::schema::Method::ServerReloadConfig(
+                    crate::api::schema::EmptyParams::default(),
+                ),
+                PendingEndpointKind::ReloadConfig,
+                outcome,
+            );
+        }
         outcome.repaint = true;
         true
     }
@@ -187,7 +200,99 @@ impl ClientShellState {
         };
         let section = settings.section;
         let selected = settings.selected;
+        // A rendered too-small notice must not apply an invisible selection.
+        if !self.hits.settings_popup.is_empty() && self.hits.settings_tabs.is_empty() {
+            return;
+        }
         match section {
+            ClientSettingsSection::Appearance => {
+                let local =
+                    self.active_endpoint_id.is_local() && self.config.local_server_config_owned;
+                if selected < 2 && !local {
+                    self.set_endpoint_error("Pane borders belong to the server session; edit them from its local connection.");
+                    outcome.repaint = true;
+                    return;
+                }
+                let borders = match selected {
+                    0 => Some((
+                        match self.config.pane_borders {
+                            crate::config::PaneBordersConfig::Auto => {
+                                crate::config::PaneBordersConfig::Always
+                            }
+                            crate::config::PaneBordersConfig::Always => {
+                                crate::config::PaneBordersConfig::Off
+                            }
+                            crate::config::PaneBordersConfig::Off => {
+                                crate::config::PaneBordersConfig::Auto
+                            }
+                        },
+                        self.config.pane_outer_borders,
+                    )),
+                    1 => Some((self.config.pane_borders, !self.config.pane_outer_borders)),
+                    5 if local => Some((crate::config::PaneBordersConfig::Auto, true)),
+                    _ => None,
+                };
+                let row_gap = match selected {
+                    2 => Some(0),
+                    3 => Some(1),
+                    4 => Some(2),
+                    5 => Some(0),
+                    _ => None,
+                };
+                if self.save_settings_edit(
+                    crate::config::ConfigEdit::Appearance { borders, row_gap },
+                    outcome,
+                ) {
+                    self.agent_scroll = 0;
+                    self.workspace_scroll = 0;
+                    self.invalidate_pane_surface();
+                    outcome.resize = borders.is_some();
+                }
+            }
+            ClientSettingsSection::Sidebar => {
+                let (min, max) = crate::config::validated_sidebar_bounds(
+                    self.config.sidebar_min_width,
+                    self.config.sidebar_max_width,
+                )
+                .unwrap_or((18, 36));
+                let mut width = self.sidebar_width.clamp(min, max);
+                let mut agents = self.config.show_sidebar_agents;
+                let mut spaces = self.config.show_sidebar_spaces;
+                match selected {
+                    0 => width = width.saturating_sub(2).max(min),
+                    1 => width = width.saturating_add(2).min(max),
+                    2 => agents = !agents,
+                    3 => spaces = !spaces,
+                    _ => {
+                        width = 26u16.clamp(min, max);
+                        agents = true;
+                        spaces = true;
+                    }
+                }
+                if self.save_settings_edit(
+                    crate::config::ConfigEdit::Sidebar {
+                        width,
+                        agents,
+                        spaces,
+                    },
+                    outcome,
+                ) {
+                    self.sidebar_width = width;
+                    if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                        settings.sidebar_width = width;
+                    }
+                    self.sidebar_width_manual = false;
+                    if selected == 4 {
+                        self.sidebar_collapsed = false;
+                        self.sidebar_collapsed_manual = true;
+                        self.sidebar_section_split = 0.5;
+                        self.sidebar_section_split_manual = false;
+                    }
+                    self.persist_chrome_preferences(outcome);
+                    self.invalidate_pane_surface();
+                    outcome.resize = true;
+                }
+            }
             ClientSettingsSection::Theme => {
                 let Some(name) = crate::config::THEME_NAMES.get(selected).copied() else {
                     return;

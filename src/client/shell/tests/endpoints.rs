@@ -1033,6 +1033,52 @@ fn sidebar_renders_local_and_saved_ssh_endpoints_with_status() {
 }
 
 #[test]
+fn sidebar_visibility_applies_to_remote_endpoints_and_reserves_compact_toggle() {
+    for collapsed in [false, true] {
+        for spaces in [false, true] {
+            for agents in [false, true] {
+                let (mut state, remote_id) = state_with_remote();
+                let mut local = snapshot();
+                local.agents = vec![agent(
+                    "local agent",
+                    crate::api::schema::AgentStatus::Idle,
+                    1,
+                )];
+                state.set_snapshot(Box::new(local));
+                let mut remote = snapshot();
+                remote.boot_id = "remote-boot".into();
+                remote.agents = vec![agent(
+                    "remote agent",
+                    crate::api::schema::AgentStatus::Idle,
+                    1,
+                )];
+                state.set_endpoint_snapshot(&remote_id, Box::new(remote));
+                state.config.show_sidebar_spaces = spaces;
+                state.config.show_sidebar_agents = agents;
+                state.sidebar_collapsed = collapsed;
+                state.compose(106, 30).expect("combined sidebar");
+                assert_eq!(!state.hits.endpoint_agents.is_empty(), agents);
+                assert_eq!(!state.hits.machines.is_empty(), spaces);
+                assert_eq!(!state.hits.workspaces.is_empty(), spaces);
+                if collapsed && spaces != agents {
+                    let toggle = state.hits.sidebar_toggle;
+                    assert!(state
+                        .hits
+                        .workspaces
+                        .iter()
+                        .all(|hit| hit.rect.intersection(toggle).is_empty()));
+                    assert!(state
+                        .hits
+                        .endpoint_agents
+                        .iter()
+                        .all(|(rect, _, _)| rect.intersection(toggle).is_empty()));
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
     fn add_worktree_group(snapshot: &mut ClientShellSnapshot, parent_id: &str, child_id: &str) {
         snapshot.workspaces[0].workspace_id = parent_id.into();

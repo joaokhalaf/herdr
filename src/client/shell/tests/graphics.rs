@@ -314,10 +314,14 @@ fn every_dialog_and_menu_occludes_its_panel_not_the_whole_screen() {
         }),
         ClientShellOverlay::GlobalMenu(ClientGlobalMenuOverlay { highlighted: 0 }),
         ClientShellOverlay::Settings(ClientSettingsOverlay {
+            sidebar_width: 26,
             section: ClientSettingsSection::Theme,
             selected: 0,
             original_theme_name: String::new(),
             original_palette: palette,
+            original_theme_runtime: Box::new(crate::app::client_theme_runtime_from_config(
+                &Config::default(),
+            )),
             integrations: Vec::new(),
             integration_messages: Vec::new(),
             loading_integrations: false,
@@ -349,8 +353,7 @@ fn every_dialog_and_menu_occludes_its_panel_not_the_whole_screen() {
                 snapshot,
                 &state.endpoints,
                 &state.active_endpoint_id,
-                &state.config.keybinds,
-                &state.config.palette,
+                &state.config,
             ),
         }
         .unwrap();

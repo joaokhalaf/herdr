@@ -104,6 +104,21 @@ directory = "~/.herdr/worktrees"
 
 终端创建表单可编辑 type、name 和 base ref。例如 `feat` 与 `Login Google` 会预览分支 `feat/login-google` 和目录 `feat-login-google`。type 可自由填写，建议值包括 `feat`、`fix`、`bug`、`refactor`、`chore`。空格和标点转换为连字符，常见拉丁字母重音会被移除。base 默认使用 `HEAD`。表单会提前提示与已登记检出目录的冲突，最终由 Git 验证操作。CLI 的分支语法和使用已有本地分支的行为保持不变。
 
+按 `prefix+s` 打开设置，选择 **sidebar** 可调整宽度、显示或隐藏 agents 与 spaces/worktrees，并恢复默认侧栏。更改立即应用并保存。两部分都隐藏时，桌面终端使用全部宽度，仍可通过 `prefix+s` 打开设置。**theme** 提供即时预览，Escape 取消预览；选择 `catppuccin` 可恢复默认主题。字体和透明度由终端模拟器设置。
+
+终端空间足够时，**layout** 和 **sidebar** 会显示所选更改的示意预览。移动选项可更新示意图，Enter 或点击可应用并保存更改。颜色由所选主题决定。
+
+**layout** 的 compact / comfortable / roomy 将两个展开侧栏列表的空行设为 0 / 1 / 2，保留自定义行内容；折叠和移动视图保持紧凑。仅打开设置不会改变自定义间距。**restore default borders and spacing** 将间距恢复为 0，不改变主题、侧栏宽度或可见性。
+
+**layout** 的 pane borders 在 `auto` / `always` / `off` 之间切换，外边框单独开关。与颜色和间距不同，现有边框设置影响服务器管理的窗格几何布局及同一会话的所有客户端。请从本地服务器连接修改，而非已保存的 SSH 机器。Enter 或点击后保存并应用，并请求服务器重新加载配置；Escape 不撤销已应用的布局修改。窄终端中的设置标签会自动换行。
+
+```toml
+[ui]
+sidebar_width = 26
+show_sidebar_agents = true
+show_sidebar_spaces = true
+```
+
 Herdr 会在 `<directory>/<repo>/<branch-slug>` 下创建检出。若要使用同级目录风格的检出，请将其设置为 `~/Projects/herdr-worktrees` 这样的目录。应用配置时，相对路径会解析为绝对路径。
 
 Git 工作区行提供 worktree 操作。`New worktree` 会创建检出：如果输入的分支已存在，则检出该本地分支，否则创建该分支；随后将其作为新的 Herdr 工作区打开，并归组到来源工作区下。`Open worktree...` 会列出该仓库现有的 Git worktree 检出；选择已打开的检出会聚焦它，选择尚未打开的检出会在同一组中打开它。

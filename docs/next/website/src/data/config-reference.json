@@ -872,6 +872,18 @@
           "description": "Default expanded sidebar width in columns. Auto-scales based on workspace names."
         },
         {
+          "key": "ui.show_sidebar_agents",
+          "type": "boolean",
+          "default": "true",
+          "description": "Show the agent section in the desktop sidebar."
+        },
+        {
+          "key": "ui.show_sidebar_spaces",
+          "type": "boolean",
+          "default": "true",
+          "description": "Show workspaces and worktrees in the desktop sidebar."
+        },
+        {
           "key": "ui.sidebar_min_width",
           "type": "integer",
           "default": "18",

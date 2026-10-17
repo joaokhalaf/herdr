@@ -315,6 +315,11 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # New tabs can still be created with the configured keybinding.
 # hide_tab_bar_when_single_tab = false
 
+# Show desktop sidebar sections (also editable from settings > sidebar).
+# Hiding both gives the pane the full width. Settings remains available via prefix+s.
+# show_sidebar_agents = true
+# show_sidebar_spaces = true
+
 # Desktop tab row placement: "top" or "bottom".
 # tab_bar_position = "top"
 

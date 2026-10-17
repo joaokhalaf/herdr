@@ -938,6 +938,10 @@ impl<'de> Deserialize<'de> for PaneBordersConfig {
 #[serde(default)]
 pub struct UiConfig {
     pub sidebar_width: u16,
+    /// Show the agent section in the desktop sidebar. Default: true.
+    pub show_sidebar_agents: bool,
+    /// Show workspaces and worktrees in the desktop sidebar. Default: true.
+    pub show_sidebar_spaces: bool,
     /// Minimum sidebar width (columns) when expanded. Default: 18.
     pub sidebar_min_width: u16,
     /// Maximum sidebar width (columns) when expanded. Default: 36.
@@ -1199,6 +1203,8 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             sidebar_width: 26,
+            show_sidebar_agents: true,
+            show_sidebar_spaces: true,
             sidebar_min_width: 18,
             sidebar_max_width: 36,
             sidebar_start_collapsed: false,

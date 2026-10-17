@@ -21,7 +21,9 @@ pub(super) fn render_collapsed(
 ) {
     let palette = &config.palette;
     super::render::render_sidebar_background(buffer, area, palette);
-    let (workspace_area, divider_y, detail_area) = super::sidebar::collapsed_sidebar_sections(area);
+    let (workspace_area, divider, detail_area) =
+        super::sidebar::visible_sidebar_sections(area, config, state.sidebar_section_split, true);
+    let divider_y = (!divider.is_empty()).then_some(divider.y);
     let mut total_rows = 0usize;
     let mut selected_row = None;
     let reveal = std::mem::take(state.reveal_navigation_workspace);
@@ -214,11 +216,11 @@ pub(super) fn render_collapsed(
         config,
         hits,
     );
-    hits.sidebar_toggle = if area.is_empty() || workspace_area.width == 0 {
+    hits.sidebar_toggle = if area.is_empty() {
         Rect::default()
     } else {
         Rect::new(
-            workspace_area.x + workspace_area.width / 2,
+            area.x + area.width.saturating_sub(1) / 2,
             area.bottom().saturating_sub(1),
             1,
             1,
@@ -249,10 +251,25 @@ pub(super) fn render_expanded(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
-    let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
-    hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+    let (workspace_area, divider, detail_area) =
+        super::sidebar::visible_sidebar_sections(area, config, state.sidebar_section_split, false);
+    hits.sidebar_section_divider = divider;
+    if workspace_area.is_empty() {
+        super::endpoint_agents::render_expanded(
+            buffer,
+            detail_area,
+            active_snapshot.and_then(|snapshot| snapshot.agent_view_label.as_deref()),
+            state.endpoints,
+            state.active_endpoint_id,
+            config,
+            state.agent_scroll,
+            hits,
+        );
+        if config.show_sidebar_agents {
+            super::sidebar::render_sidebar_toggle(buffer, area, false, palette, hits);
+        }
+        return;
+    }
     put_text(
         buffer,
         workspace_area.x,

@@ -44,6 +44,65 @@ pub(in crate::client::shell) fn collapsed_sidebar_sections(
     )
 }
 
+pub(in crate::client::shell) fn visible_sidebar_sections(
+    area: Rect,
+    config: &ClientShellConfig,
+    split: f32,
+    collapsed: bool,
+) -> (Rect, Rect, Rect) {
+    let content = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
+    let single_section = Rect::new(
+        content.x,
+        content.y,
+        content.width,
+        content.height.saturating_sub(u16::from(collapsed)),
+    );
+    match (config.show_sidebar_spaces, config.show_sidebar_agents) {
+        (true, true) if collapsed => {
+            let (spaces, divider, agents) = collapsed_sidebar_sections(area);
+            (
+                spaces,
+                divider.map_or(Rect::default(), |y| {
+                    Rect::new(content.x, y, content.width, 1)
+                }),
+                agents,
+            )
+        }
+        (true, true) => {
+            let (spaces, agents) = crate::ui::expanded_sidebar_sections(area, split);
+            (
+                spaces,
+                crate::ui::sidebar_section_divider_rect(area, split),
+                agents,
+            )
+        }
+        (true, false) => (single_section, Rect::default(), Rect::default()),
+        (false, true) => (Rect::default(), Rect::default(), single_section),
+        (false, false) => (Rect::default(), Rect::default(), Rect::default()),
+    }
+}
+
+pub(in crate::client::shell) fn render_sidebar_toggle(
+    buffer: &mut Buffer,
+    area: Rect,
+    collapsed: bool,
+    palette: &Palette,
+    hits: &mut ShellHitMap,
+) {
+    if area.width < 2 || area.height == 0 {
+        return;
+    }
+    hits.sidebar_toggle = Rect::new(area.right() - 2, area.bottom() - 1, 1, 1);
+    put_text(
+        buffer,
+        hits.sidebar_toggle.x,
+        hits.sidebar_toggle.y,
+        1,
+        if collapsed { "»" } else { "«" },
+        Style::default().fg(palette.overlay0),
+    );
+}
+
 pub(crate) fn render_collapsed_sidebar(
     buffer: &mut Buffer,
     area: Rect,
@@ -56,7 +115,8 @@ pub(crate) fn render_collapsed_sidebar(
     let selection_background = workspace_selection_background(palette);
     let active_background = workspace_active_background(palette, selected_workspace_id.is_some());
     render_sidebar_background(buffer, area, palette);
-    let (workspace_area, divider_y, detail_area) = collapsed_sidebar_sections(area);
+    let (workspace_area, divider, detail_area) = visible_sidebar_sections(area, config, 0.5, true);
+    let divider_y = (!divider.is_empty()).then_some(divider.y);
     for (index, workspace) in snapshot
         .workspaces
         .iter()
@@ -127,7 +187,12 @@ pub(crate) fn render_collapsed_sidebar(
         detail_area.width,
         detail_area.height.saturating_sub(1),
     );
-    for (index, pane_id) in super::ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+    let agent_ids = if detail_content.is_empty() {
+        Vec::new()
+    } else {
+        super::ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+    };
+    for (index, pane_id) in agent_ids
         .into_iter()
         .take(detail_content.height as usize)
         .enumerate()
@@ -170,11 +235,11 @@ pub(crate) fn render_collapsed_sidebar(
         );
         hits.agents.push((rect, pane_id));
     }
-    hits.sidebar_toggle = if area.is_empty() || workspace_area.width == 0 {
+    hits.sidebar_toggle = if area.is_empty() {
         Rect::default()
     } else {
         Rect::new(
-            workspace_area.x + workspace_area.width / 2,
+            area.x + area.width.saturating_sub(1) / 2,
             area.bottom().saturating_sub(1),
             1,
             1,
@@ -211,10 +276,23 @@ pub(crate) fn render_sidebar(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
-    let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
-    hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+    let (workspace_area, divider, detail_area) =
+        visible_sidebar_sections(area, config, state.sidebar_section_split, false);
+    hits.sidebar_section_divider = divider;
+    if workspace_area.is_empty() {
+        super::render_agent_panel(
+            buffer,
+            detail_area,
+            snapshot,
+            config,
+            state.agent_scroll,
+            hits,
+        );
+        if config.show_sidebar_agents {
+            render_sidebar_toggle(buffer, area, false, palette, hits);
+        }
+        return;
+    }
     put_text(
         buffer,
         workspace_area.x,
