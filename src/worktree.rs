@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+pub(crate) mod preparation;
+
 const DEFAULT_WORKTREE_PREFIX: &str = "worktree";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -234,6 +234,13 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # [worktrees]
 # directory = "~/.herdr/worktrees"
 
+# Optional per-repository preparation, configured on the server running Git.
+# Files are copied before terminals open. The command runs in a separate setup tab.
+# [[worktrees.prepare]]
+# repository = "~/Projects/my-app"
+# copy_files = [".env", "config/local.env"]
+# command = ["pnpm", "install"]
+
 [ui]
 # Sidebar width (auto-scaled based on workspace names, this sets the default)
 # sidebar_width = 26
@@ -314,6 +321,11 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Hide the tab row when a workspace has exactly one tab.
 # New tabs can still be created with the configured keybinding.
 # hide_tab_bar_when_single_tab = false
+
+# Show desktop sidebar sections (also editable from settings > sidebar).
+# Hiding both gives the pane the full width. Settings remains available via prefix+s.
+# show_sidebar_agents = true
+# show_sidebar_spaces = true
 
 # Desktop tab row placement: "top" or "bottom".
 # tab_bar_position = "top"

@@ -14,6 +14,12 @@ pub(crate) enum ClientShellKeybindingSource {
 
 pub(crate) struct ClientShellConfig {
     pub(super) sidebar_width: u16,
+    pub(super) show_sidebar_agents: bool,
+    pub(super) show_sidebar_spaces: bool,
+    pub(super) pane_borders: crate::config::PaneBordersConfig,
+    pub(super) pane_outer_borders: bool,
+    /// False for a TUI attached through a forwarded remote endpoint.
+    pub(super) local_server_config_owned: bool,
     pub(super) sidebar_min_width: u16,
     pub(super) sidebar_max_width: u16,
     pub(super) sidebar_start_collapsed: bool,
@@ -125,6 +131,7 @@ pub(super) struct ShellHitMap {
     pub(super) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) worktree_search: Rect,
     pub(super) worktree_rows: Vec<(Rect, usize)>,
+    pub(super) worktree_fields: Vec<(Rect, usize)>,
     pub(super) help_popup: Rect,
     pub(super) help_scrollbar: Rect,
     pub(super) help_scroll_metrics: Option<crate::pane::ScrollMetrics>,
@@ -384,6 +391,8 @@ pub(super) struct ClientGlobalMenuOverlay {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientSettingsSection {
     Theme,
+    Appearance,
+    Sidebar,
     Indicators,
     Sound,
     Toast,
@@ -393,6 +402,8 @@ pub(super) enum ClientSettingsSection {
 impl ClientSettingsSection {
     pub(super) const ALL: &[Self] = &[
         Self::Theme,
+        Self::Appearance,
+        Self::Sidebar,
         Self::Indicators,
         Self::Sound,
         Self::Toast,
@@ -402,6 +413,8 @@ impl ClientSettingsSection {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Theme => "theme",
+            Self::Appearance => "layout",
+            Self::Sidebar => "sidebar",
             Self::Indicators => "indicators",
             Self::Sound => "sound",
             Self::Toast => "toasts",
@@ -414,8 +427,10 @@ impl ClientSettingsSection {
 pub(super) struct ClientSettingsOverlay {
     pub(super) section: ClientSettingsSection,
     pub(super) selected: usize,
+    pub(super) sidebar_width: u16,
     pub(super) original_theme_name: String,
     pub(super) original_palette: Palette,
+    pub(super) original_theme_runtime: Box<crate::app::state::ThemeRuntimeConfig>,
     pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,
     pub(super) integration_messages: Vec<String>,
     pub(super) loading_integrations: bool,
@@ -427,9 +442,29 @@ pub(super) struct ClientWorktreeCreateOverlay {
     pub(super) source_workspace_id: String,
     pub(super) repo_name: String,
     pub(super) branch: TextEditor,
+    pub(super) kind: TextEditor,
+    pub(super) base: TextEditor,
+    pub(super) field: usize,
+    pub(super) existing: Vec<crate::api::schema::WorktreeInfo>,
     pub(super) checkout_path: String,
     pub(super) error: Option<String>,
     pub(super) creating: bool,
+}
+
+impl ClientWorktreeCreateOverlay {
+    pub(super) fn editor(&mut self) -> &mut TextEditor {
+        match self.field {
+            0 => &mut self.kind,
+            2 => &mut self.base,
+            _ => &mut self.branch,
+        }
+    }
+
+    pub(super) fn branch_name(&self) -> String {
+        let kind = super::worktrees::normalize_branch_part(self.kind.trim());
+        let name = super::worktrees::normalize_branch_part(self.branch.trim());
+        format!("{kind}/{name}")
+    }
 }
 
 #[derive(Debug, Clone)]

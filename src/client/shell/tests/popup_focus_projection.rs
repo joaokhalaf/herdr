@@ -46,6 +46,10 @@ fn modal_paste_target_requires_a_focused_editable_client_field() {
 
     state.overlay = Some(ClientShellOverlay::WorktreeCreate(
         ClientWorktreeCreateOverlay {
+            kind: TextEditor::new("feat", false),
+            base: TextEditor::new("HEAD", false),
+            field: 1,
+            existing: Vec::new(),
             source_workspace_id: "ws_1".into(),
             repo_name: "repo".into(),
             branch: TextEditor::default(),

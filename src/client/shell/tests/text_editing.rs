@@ -211,6 +211,8 @@ fn enter_and_escape_preserve_overlay_actions_with_generated_text() {
         for code in [KeyCode::Enter, KeyCode::Esc] {
             let mut state = shell(field);
             *editor(&mut state) = TextEditor::from("feature");
+            // Submission requires the active form to have been displayed.
+            state.compose(106, 30).expect("visible overlay");
             let before = editor(&mut state).clone();
             let result = state.handle_raw_events(vec![RawInputEvent::Key(
                 TerminalKey::new(code, KeyModifiers::NONE)
@@ -225,7 +227,7 @@ fn enter_and_escape_preserve_overlay_actions_with_generated_text() {
                 };
                 match &request.method {
                     Method::WorktreeCreate(params) if field == 5 => {
-                        assert_eq!(params.branch.as_deref(), Some("feature"));
+                        assert_eq!(params.branch.as_deref(), Some("feat/feature"));
                     }
                     Method::WorktreeOpen(params) if field == 8 => {
                         assert_eq!(params.path.as_deref(), Some("/repo-feature"));

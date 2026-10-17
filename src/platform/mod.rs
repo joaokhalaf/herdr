@@ -528,6 +528,9 @@ mod remote_bridge;
 mod remote_bridge_tests;
 #[cfg(unix)]
 mod unix_common;
+
+#[cfg(unix)]
+pub(crate) use unix_common::worktree_preparation_argv;
 /// Other Unix platforms keep their existing input admission policy.
 /// Their _PC_MAX_CANON values need not describe the actual queue capacity.
 #[cfg(all(unix, not(target_os = "macos")))]

@@ -9,6 +9,7 @@ use crate::app::App;
 use super::responses::{encode_error, encode_success};
 
 mod deferred;
+mod preparation;
 mod reads;
 
 struct ApiFailure {
@@ -844,6 +845,220 @@ mod tests {
         let _ = std::fs::remove_dir_all(repo);
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn worktree_setup_pane_clears_shadowing_handoff_alias() {
+        let repo = create_committed_repo("preparation-handoff-alias");
+        let mut app = app_with_parent(&repo);
+        let original = app.state.workspaces[0].tabs[0].root_pane;
+        let next = crate::layout::PaneId::alloc().raw() + 1;
+        app.state.pane_id_aliases.insert(next, original);
+        let unrelated_alias = u32::MAX;
+        app.state.pane_id_aliases.insert(unrelated_alias, original);
+
+        app.start_worktree_preparation_command(0, &repo, &["true".into()])
+            .unwrap();
+        let setup = app.state.workspaces[0].tabs[1].root_pane;
+        assert_eq!(setup.raw(), next);
+        assert_eq!(app.parse_pane_id(&format!("p_{next}")), Some((0, setup)));
+        let public_id = app.public_pane_id(0, setup).unwrap();
+        assert_eq!(app.parse_pane_id(&public_id), Some((0, setup)));
+        assert_eq!(
+            app.parse_pane_id(&format!("p_{unrelated_alias}")),
+            Some((0, original)),
+            "unrelated handoff aliases remain usable"
+        );
+        app.state.assert_invariants_for_test();
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn api_worktree_preparation_copies_before_launch_and_retains_failed_command_output() {
+        let repo = create_committed_repo("preparation-source");
+        let root = unique_temp_path("preparation-checkouts");
+        std::fs::write(repo.join(".env"), "fixture-value").unwrap();
+        let mut app = test_app_with_event_hub(crate::api::EventHub::default());
+        let mut parent = Workspace::test_new("main");
+        parent.identity_cwd = repo.clone();
+        app.state.workspaces = vec![parent];
+        app.state.ensure_test_terminals();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.default_shell = "/bin/sh".into();
+        app.state.worktree_directory = root.clone();
+        app.state.worktree_preparations = vec![crate::config::WorktreePreparationConfig {
+            repository: repo.display().to_string(),
+            install_dependencies: false,
+            copy_files: vec![".env".into()],
+            command: vec![
+                "sh".into(),
+                "-c".into(),
+                "cat .env > setup-result; exit 7".into(),
+            ],
+        }];
+        let workspace_id = app.public_workspace_id(0);
+        let response = run_deferred_api_request(
+            &mut app,
+            Request {
+                id: "prepare".into(),
+                method: crate::api::schema::Method::WorktreeCreate(WorktreeCreateParams {
+                    workspace_id: Some(workspace_id),
+                    branch: Some("feat/prepared".into()),
+                    ..Default::default()
+                }),
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::WorktreeCreated { worktree, .. } = success.result else {
+            panic!("expected created worktree");
+        };
+        let checkout = Path::new(&worktree.path);
+        assert_eq!(app.state.workspaces[1].tabs.len(), 2);
+        assert_eq!(
+            app.state.workspaces[1].tabs[1].custom_name.as_deref(),
+            Some("setup")
+        );
+        let pane = app.state.workspaces[1].tabs[1].root_pane;
+        let terminal = app.state.workspaces[1].terminal_id(pane).unwrap().clone();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if app
+                .terminal_runtimes
+                .get(&terminal)
+                .unwrap()
+                .recent_text_snapshot(30)
+                .text
+                .contains("setup exited with status 7")
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "setup output should remain in its terminal"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(
+            std::fs::read(checkout.join("setup-result")).unwrap(),
+            b"fixture-value"
+        );
+        // Preserve the existing parent-only creation contract. A second
+        // creation picks up the current config and local files; copy-only
+        // preparation does not introduce a setup tab.
+        std::fs::write(repo.join(".env"), "updated-parent-fixture").unwrap();
+        app.state.worktree_preparations[0].command.clear();
+        let workspace_id = app.public_workspace_id(1);
+        let response = run_deferred_api_request(
+            &mut app,
+            Request {
+                id: "prepare-from-linked".into(),
+                method: crate::api::schema::Method::WorktreeCreate(WorktreeCreateParams {
+                    workspace_id: Some(workspace_id),
+                    branch: Some("feat/prepared-from-linked".into()),
+                    ..Default::default()
+                }),
+            },
+        );
+        assert!(response.contains("linked_worktree_source"));
+        let workspace_id = app.public_workspace_id(0);
+        let response = run_deferred_api_request(
+            &mut app,
+            Request {
+                id: "prepare-copy-only".into(),
+                method: crate::api::schema::Method::WorktreeCreate(WorktreeCreateParams {
+                    workspace_id: Some(workspace_id),
+                    branch: Some("feat/prepared-copy-only".into()),
+                    ..Default::default()
+                }),
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response)
+            .unwrap_or_else(|err| panic!("copy-only worktree creation failed: {response}: {err}"));
+        let ResponseResult::WorktreeCreated {
+            worktree: linked, ..
+        } = success.result
+        else {
+            panic!("expected created copy-only worktree");
+        };
+        assert_eq!(app.state.workspaces[2].tabs.len(), 1);
+        assert_eq!(
+            std::fs::read(Path::new(&linked.path).join(".env")).unwrap(),
+            b"updated-parent-fixture"
+        );
+        app.state.assert_invariants_for_test();
+        for (_, runtime) in app.terminal_runtimes.drain() {
+            runtime.shutdown();
+        }
+        let remove = crate::worktree::build_worktree_remove_command(
+            &repo,
+            Path::new(&linked.path),
+            true,
+            false,
+        );
+        crate::worktree::run_worktree_command(&remove).unwrap();
+        let remove = crate::worktree::build_worktree_remove_command(&repo, checkout, true, false);
+        crate::worktree::run_worktree_command(&remove).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[tokio::test]
+    async fn api_worktree_preparation_failure_retains_checkout_and_clears_pending_operation() {
+        for install_dependencies in [false, true] {
+            let repo = create_committed_repo("preparation-missing-source");
+            let root = unique_temp_path("preparation-failed-checkouts");
+            let mut app = test_app_with_event_hub(crate::api::EventHub::default());
+            let mut parent = Workspace::test_new("main");
+            parent.identity_cwd = repo.clone();
+            app.state.workspaces = vec![parent];
+            app.state.ensure_test_terminals();
+            app.state.active = Some(0);
+            app.state.selected = 0;
+            app.state.worktree_directory = root.clone();
+            app.state.worktree_preparations = vec![crate::config::WorktreePreparationConfig {
+                repository: repo.display().to_string(),
+                install_dependencies,
+                copy_files: if install_dependencies {
+                    Vec::new()
+                } else {
+                    vec!["missing.env".into()]
+                },
+                command: Vec::new(),
+            }];
+            let workspace_id = app.public_workspace_id(0);
+            let response = run_deferred_api_request(
+                &mut app,
+                Request {
+                    id: "prepare".into(),
+                    method: crate::api::schema::Method::WorktreeCreate(WorktreeCreateParams {
+                        workspace_id: Some(workspace_id),
+                        branch: Some("feat/failed-preparation".into()),
+                        ..Default::default()
+                    }),
+                },
+            );
+            assert!(response.contains("worktree_create_failed"));
+            assert!(response.contains("created and retained"));
+            assert!(app.pending_api_worktree_creates.is_empty());
+            assert_eq!(app.state.workspaces.len(), 1);
+            let checkout = crate::worktree::default_checkout_path(
+                &root,
+                repo.file_name().unwrap().to_str().unwrap(),
+                "feat/failed-preparation",
+            );
+            assert!(checkout.join(".git").exists());
+            let remove =
+                crate::worktree::build_worktree_remove_command(&repo, &checkout, false, false);
+            crate::worktree::run_worktree_command(&remove).unwrap();
+            let _ = std::fs::remove_dir_all(root);
+            let _ = std::fs::remove_dir_all(repo);
+        }
+    }
+
     #[tokio::test]
     async fn deferred_api_worktree_create_preserves_event_and_plugin_context() {
         let repo = create_committed_repo("api-worktree-create-deferred-repo");
@@ -1138,6 +1353,7 @@ mod tests {
         app.handle_api_worktree_add_finished(WorktreeAddResult {
             path: checkout.clone(),
             api_request: Some(ApiWorktreeAddRequest {
+                preparation_command: Vec::new(),
                 id: "req".into(),
                 operation_id: 9,
                 checkout_key,

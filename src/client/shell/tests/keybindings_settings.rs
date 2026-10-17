@@ -2,6 +2,268 @@ use super::*;
 use crate::input::TerminalKey;
 
 #[test]
+fn appearance_settings_save_locally_preserve_theme_and_scope_border_reload() {
+    let _guard = crate::config::test_config_env_lock().lock().unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "herdr-appearance-settings-{}.toml",
+        std::process::id()
+    ));
+    let content = "[theme]\nname = 'dracula'\n[theme.custom]\ntext = '#112233'\n[ui]\nsidebar_width = 30\n[ui.sidebar.agents]\nrow_gap = 4\n[ui.sidebar.spaces]\nrow_gap = 3\n";
+    std::fs::write(&path, content).unwrap();
+    let previous = std::env::var_os(crate::config::CONFIG_PATH_ENV_VAR);
+    std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+    let config: Config = toml::from_str(content).unwrap();
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.config.local_server_config_owned = true;
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let original = state.config.palette.clone();
+    state.open_settings_overlay();
+    state.select_settings_section(
+        ClientSettingsSection::Appearance,
+        &mut ClientShellInput::default(),
+    );
+    // Merely opening the panel preserves custom spacing.
+    assert_eq!(state.config.agents.row_gap, 4);
+    for (cols, rows) in [(106, 30), (80, 20), (32, 18)] {
+        state.compose(cols, rows).unwrap();
+        assert_eq!(
+            state.hits.settings_tabs.len(),
+            ClientSettingsSection::ALL.len()
+        );
+        assert!(state
+            .hits
+            .settings_tabs
+            .iter()
+            .all(|(rect, _)| rect.right() <= cols && rect.bottom() <= rows));
+        assert!(!state.hits.settings_choices.is_empty());
+    }
+    for (choice, gap) in [(2, 0), (3, 1), (4, 2)] {
+        state.select_settings_choice(choice);
+        let mut outcome = ClientShellInput::default();
+        state.apply_settings_choice(&mut outcome);
+        assert!(outcome.actions.is_empty());
+        assert_eq!(state.config.agents.row_gap, gap);
+        assert_eq!(state.config.spaces.row_gap, gap);
+        assert_eq!(state.sidebar_width, 30);
+    }
+    state.select_settings_choice(0);
+    let mut outcome = ClientShellInput::default();
+    state.apply_settings_choice(&mut outcome);
+    assert_eq!(
+        state.config.pane_borders,
+        crate::config::PaneBordersConfig::Always
+    );
+    assert!(outcome.resize);
+    assert!(outcome.actions.iter().any(|action| matches!(action,
+        ClientShellAction::Endpoint { request, .. } if matches!(request.method, crate::api::schema::Method::ServerReloadConfig(_))
+    )));
+    state.select_settings_choice(5);
+    state.apply_settings_choice(&mut ClientShellInput::default());
+    assert_eq!(
+        state.config.pane_borders,
+        crate::config::PaneBordersConfig::Auto
+    );
+    assert!(state.config.pane_outer_borders);
+    assert_eq!(state.config.agents.row_gap, 0);
+    state.cancel_settings_overlay();
+    assert_eq!(
+        state.config.palette, original,
+        "layout changes must preserve the theme"
+    );
+
+    state.open_settings_overlay();
+    state.select_settings_section(
+        ClientSettingsSection::Appearance,
+        &mut ClientShellInput::default(),
+    );
+    state.active_endpoint_id = ClientEndpointId::Ssh(
+        crate::client::endpoint::ProfileId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+    );
+    state.select_settings_choice(0);
+    let before = std::fs::read_to_string(&path).unwrap();
+    let mut outcome = ClientShellInput::default();
+    state.apply_settings_choice(&mut outcome);
+    assert!(outcome.actions.is_empty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    state.active_endpoint_id = ClientEndpointId::Local;
+    state.config.local_server_config_owned = false;
+    state.apply_settings_choice(&mut outcome);
+    assert!(outcome.actions.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        before,
+        "forwarded SSH sockets also use the Local endpoint ID"
+    );
+    if let Some(value) = previous {
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, value);
+    } else {
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn tiny_settings_show_resize_notice_without_executable_invisible_choice() {
+    for (cols, rows) in [(26, 12), (40, 14), (20, 8)] {
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+        state.set_snapshot(Box::new(snapshot()));
+        state.set_pane_surface(surface());
+        state.open_settings_overlay();
+        state.select_settings_section(
+            ClientSettingsSection::Appearance,
+            &mut ClientShellInput::default(),
+        );
+        state.compose(cols, rows).unwrap();
+        assert!(!state.hits.settings_popup.is_empty());
+        assert!(state.hits.settings_tabs.is_empty());
+        assert!(state.hits.settings_choices.is_empty());
+        let mut outcome = ClientShellInput::default();
+        state.apply_settings_choice(&mut outcome);
+        assert!(outcome.actions.is_empty());
+        assert_eq!(
+            state.config.pane_borders,
+            crate::config::PaneBordersConfig::Auto
+        );
+        state.cancel_settings_overlay();
+        assert!(state.overlay.is_none());
+    }
+}
+
+#[test]
+fn sidebar_spacing_keeps_grouped_children_attached_and_hits_inside_short_viewports() {
+    for gap in [0, 1, 2] {
+        let mut config = Config::default();
+        config.ui.show_sidebar_agents = false;
+        config.ui.sidebar.spaces.row_gap = gap;
+        let mut projected = snapshot();
+        projected.workspaces[0].worktree = Some(ClientShellWorktree {
+            key: "repo".into(),
+            label: "repo".into(),
+            is_linked_worktree: false,
+        });
+        let mut child = projected.workspaces[0].clone();
+        child.workspace_id = "child".into();
+        child.focused = false;
+        child.worktree.as_mut().unwrap().is_linked_worktree = true;
+        let mut other = child.clone();
+        other.workspace_id = "other".into();
+        other.worktree = None;
+        projected.workspaces.extend([child, other]);
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+        state.set_snapshot(Box::new(projected));
+        state.set_pane_surface(surface());
+        state.compose(106, 30).unwrap();
+        assert_eq!(state.hits.workspaces.len(), 3);
+        let parent = state.hits.workspaces[0].rect;
+        let child = state.hits.workspaces[1].rect;
+        let other = state.hits.workspaces[2].rect;
+        assert_eq!(child.y, parent.bottom());
+        assert_eq!(other.y, child.bottom() + gap);
+        state.workspace_scroll = usize::MAX;
+        state.compose(106, 12).unwrap();
+        assert!(state
+            .hits
+            .workspaces
+            .iter()
+            .all(|hit| hit.rect.bottom() <= state.hits.workspace_body.bottom()));
+        assert!(state.workspace_scroll <= state.hits.workspace_max_scroll);
+    }
+}
+
+#[test]
+fn sidebar_visibility_reclaims_space_and_removes_hidden_hit_targets() {
+    for collapsed in [false, true] {
+        for spaces in [false, true] {
+            for agents in [false, true] {
+                let mut config = Config::default();
+                config.ui.show_sidebar_spaces = spaces;
+                config.ui.show_sidebar_agents = agents;
+                let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+                state.set_snapshot(Box::new(snapshot()));
+                state.set_pane_surface(surface());
+                state.sidebar_collapsed = collapsed;
+                state.compose(106, 30).expect("sidebar frame");
+                if !spaces {
+                    assert!(state.hits.workspaces.is_empty());
+                    assert!(state.hits.new_workspace.is_empty());
+                    assert!(state.hits.global_launcher.is_empty());
+                }
+                if !agents {
+                    assert!(state.hits.agents.is_empty());
+                    assert!(state.hits.endpoint_agents.is_empty());
+                    assert!(state.hits.agent_body.is_empty());
+                }
+                if !spaces || !agents {
+                    assert!(state.hits.sidebar_section_divider.is_empty());
+                }
+                assert_eq!(state.layout(106, 30).sidebar.width == 0, !spaces && !agents);
+                if spaces || agents {
+                    assert!(!state.hits.sidebar_toggle.is_empty());
+                }
+                state.compose(60, 20).expect("mobile layout remains usable");
+            }
+        }
+    }
+}
+
+#[test]
+fn sidebar_settings_persist_width_overrides_visibility_and_restore_defaults() {
+    let _guard = crate::config::test_config_env_lock().lock().unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "herdr-sidebar-settings-{}.toml",
+        std::process::id()
+    ));
+    std::fs::write(&path, "[theme]\nname = \"terminal\"\n").unwrap();
+    let previous = std::env::var_os(crate::config::CONFIG_PATH_ENV_VAR);
+    std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    // Client-only settings work even if the endpoint has no reload method.
+    state.set_endpoint_methods(Some(Vec::new()));
+    state.sidebar_width = 31;
+    state.sidebar_width_manual = true;
+    state.open_settings_overlay();
+    state.select_settings_section(
+        ClientSettingsSection::Sidebar,
+        &mut ClientShellInput::default(),
+    );
+    state
+        .compose(106, 20)
+        .expect("sidebar settings on a short terminal");
+    assert_eq!(state.hits.settings_choices.len(), 5);
+    state.select_settings_choice(1);
+    let mut outcome = ClientShellInput::default();
+    state.apply_settings_choice(&mut outcome);
+    let written: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(written.ui.sidebar_width, 33);
+    assert_eq!(state.sidebar_width, 33);
+    assert!(!state.sidebar_width_manual);
+    assert!(outcome.resize);
+    assert!(outcome.actions.is_empty());
+    assert!(state.visible_endpoint_notice.is_none());
+    state.select_settings_choice(2);
+    state.apply_settings_choice(&mut ClientShellInput::default());
+    assert!(!state.config.show_sidebar_agents);
+    state.sidebar_collapsed = true;
+    state.sidebar_section_split = 0.7;
+    state.select_settings_choice(4);
+    state.apply_settings_choice(&mut ClientShellInput::default());
+    assert_eq!(state.sidebar_width, 26);
+    assert!(!state.sidebar_collapsed);
+    assert_eq!(state.sidebar_section_split, 0.5);
+    assert!(state.config.show_sidebar_agents && state.config.show_sidebar_spaces);
+    assert_eq!(state.config.theme_name, "terminal");
+    if let Some(value) = previous {
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, value);
+    } else {
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn plus_commands_survive_snapshots_and_reload_for_both_keybinding_sources() {
     for source in [
         ClientShellKeybindingSource::Local,

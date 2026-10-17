@@ -585,6 +585,20 @@ fn server_survives_hangup_and_logs_why_it_stops() {
 
     let mut spawned = spawn_server(&config_home, &runtime_dir, &api_socket, &client_socket);
     wait_for_socket(&api_socket, Duration::from_secs(10));
+    // Ping is handled by the API listener before App startup finishes. A
+    // workspace request must pass through the app loop, where stop-signal
+    // handlers have been installed before requests are drained.
+    let mut ready = UnixStream::connect(&api_socket).unwrap();
+    ready
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    ready
+        .write_all(b"{\"id\":\"ready\",\"method\":\"workspace.list\",\"params\":{}}\n")
+        .unwrap();
+    let mut response = String::new();
+    BufReader::new(ready).read_line(&mut response).unwrap();
+    let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+    assert!(response["result"].is_object(), "{response}");
     let pid = spawned.child.process_id().expect("server pid") as libc::pid_t;
 
     assert_eq!(unsafe { libc::kill(pid, libc::SIGHUP) }, 0);

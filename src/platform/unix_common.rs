@@ -1,5 +1,17 @@
 use std::path::{Path, PathBuf};
 
+/// Run argv before the interactive shell, retaining setup output on exit.
+/// Arguments are positional and never interpolated into shell source.
+pub(crate) fn worktree_preparation_argv(command: &[String]) -> Vec<String> {
+    let mut argv = vec![
+        "/bin/sh".into(), "-c".into(),
+        "\"$@\"; status=$?; printf '\\n[herdr] setup exited with status %s\\n' \"$status\"; exec \"$HERDR_WORKTREE_SHELL\"".into(),
+        "herdr-worktree-setup".into(),
+    ];
+    argv.extend_from_slice(command);
+    argv
+}
+
 pub(crate) struct ChildPipe(std::fs::File);
 
 impl ChildPipe {
