@@ -65,7 +65,11 @@ case "$last" in
         printf 'login banner\n'
         case "$script" in
             *'uname -s'*) printf 'herdr-remote-output-ready:1\n'; uname -s; uname -m ;;
-            *) PATH="$TEST_ROOT/remote bin:/usr/bin:/bin" exec /bin/sh -c "$script" ;;
+            *)
+                # Keep machine-wide installation candidates on the fake remote.
+                # HOME-based candidates already live under TEST_ROOT.
+                script=$(printf '%s' "$script" | sed 's|emit "/|emit "$TEST_ROOT/remote-system/|g')
+                PATH="$TEST_ROOT/remote bin:/usr/bin:/bin" exec /bin/sh -c "$script" ;;
         esac ;;
     *) echo "unexpected command: $last" >&2; exit 2 ;;
 esac
@@ -343,6 +347,29 @@ fn machine_api_bootstrap_falls_back_from_an_old_path_binary() {
         harness.root.join(".local/bin/herdr"),
     )
     .unwrap();
+    let server = harness.serve(
+        json!({"result":{"type":"agent_list","agents":[]}}),
+        harness.protocol,
+    );
+    success(
+        harness
+            .command(&["--machine", "mac", "agent", "list"])
+            .env("TEST_MODE", "old")
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(server.join().unwrap()["method"], "agent.list");
+    harness.assert_local_untouched();
+}
+
+#[test]
+fn machine_api_bootstrap_uses_only_fixture_system_installations() {
+    let harness = Harness::new();
+    let system_bin = harness
+        .root
+        .join("remote-system/home/linuxbrew/.linuxbrew/bin");
+    fs::create_dir_all(&system_bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_herdr"), system_bin.join("herdr")).unwrap();
     let server = harness.serve(
         json!({"result":{"type":"agent_list","agents":[]}}),
         harness.protocol,

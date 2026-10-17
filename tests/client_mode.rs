@@ -739,20 +739,39 @@ fn sigwinch_refreshes_host_palette_without_resizing() {
     let output = spawn_pty_drain(master.try_clone_reader().unwrap());
     let mut writer = master.take_writer().unwrap();
     let queries = "\x1b]10;?\x1b\\\x1b]11;?\x1b\\";
+    let appearance_query = "\x1b[?996n";
     assert!(
         wait_until(Duration::from_secs(5), Duration::from_millis(25), || {
-            read_output(&output).contains(queries)
+            let captured = read_output(&output);
+            captured
+                .split_once(queries)
+                .is_some_and(|(_, after)| after.contains(appearance_query))
         }),
         "client should query the initial palette: {:?}",
         read_output(&output)
     );
 
+    // The appearance query follows the complete theme query. Capture that
+    // sequence so redraws must repeat the same platform policy: WSL queries
+    // default colors only, while other Unix hosts also query the ANSI palette.
+    let startup = read_output(&output);
+    let query_start = startup
+        .find(queries)
+        .expect("initial default-color queries");
+    let query_end = query_start
+        + startup[query_start..]
+            .find(appearance_query)
+            .expect("appearance query after the complete theme query");
+    let expected_queries = &startup[query_start..query_end];
+
     // Complete the startup query with a light palette. No appearance notification
     // is sent: this models a terminal whose colors are changed directly by OSC.
     let mut light =
         String::from("\x1b]10;rgb:0000/0000/0000\x1b\\\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
-    for index in 0..=u8::MAX {
-        light.push_str(&format!("\x1b]4;{index};rgb:ffff/ffff/ffff\x1b\\"));
+    if expected_queries.contains("\x1b]4;") {
+        for index in 0..=u8::MAX {
+            light.push_str(&format!("\x1b]4;{index};rgb:ffff/ffff/ffff\x1b\\"));
+        }
     }
     writer.write_all(light.as_bytes()).unwrap();
     writer.flush().unwrap();
@@ -769,9 +788,9 @@ fn sigwinch_refreshes_host_palette_without_resizing() {
             wait_until(Duration::from_secs(5), Duration::from_millis(25), || {
                 let captured = read_output(&output);
                 let refreshed = &captured[watermark..];
-                refreshed.contains(queries) && refreshed.contains("\x1b]4;15;?\x1b\\")
+                refreshed.contains(expected_queries)
             }),
-            "SIGWINCH should query default colors and the ANSI palette without changing PTY size"
+            "SIGWINCH should repeat the startup theme query without changing PTY size"
         );
         writer
             .write_all(b"\x1b]10;rgb:eeee/eeee/eeee\x1b\\\x1b]11;rgb:1111/2222/3333\x1b\\")

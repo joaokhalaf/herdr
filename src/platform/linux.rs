@@ -2085,19 +2085,13 @@ mod tests {
         }
 
         let old_path = std::env::var_os("PATH");
-        let test_path = match old_path.as_ref() {
-            Some(path) => {
-                let mut paths = vec![temp_dir.clone()];
-                paths.extend(std::env::split_paths(path));
-                std::env::join_paths(paths).expect("test path should be valid")
-            }
-            None => temp_dir.clone().into_os_string(),
-        };
+        // Only fake backends may run; WSL must not read the host clipboard
+        // through a real powershell.exe inherited from PATH.
 
         unsafe {
             std::env::remove_var("WAYLAND_DISPLAY");
             std::env::set_var("DISPLAY", ":0");
-            std::env::set_var("PATH", test_path);
+            std::env::set_var("PATH", &temp_dir);
         }
 
         let result = read_clipboard_image();
@@ -2142,19 +2136,13 @@ mod tests {
         }
 
         let old_path = std::env::var_os("PATH");
-        let test_path = match old_path.as_ref() {
-            Some(path) => {
-                let mut paths = vec![temp_dir.clone()];
-                paths.extend(std::env::split_paths(path));
-                std::env::join_paths(paths).expect("test path should be valid")
-            }
-            None => temp_dir.clone().into_os_string(),
-        };
+        // Only fake backends may run; WSL must not read the host clipboard
+        // through a real powershell.exe inherited from PATH.
 
         unsafe {
             std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
             std::env::set_var("DISPLAY", ":0");
-            std::env::set_var("PATH", test_path);
+            std::env::set_var("PATH", &temp_dir);
         }
 
         let result = read_clipboard_image();
