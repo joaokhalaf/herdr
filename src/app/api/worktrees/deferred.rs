@@ -188,9 +188,12 @@ impl App {
             repo_name: source.repo_name,
             label: params.label,
             focus: params.focus,
+            preparation_command: Vec::new(),
             respond_to,
         };
         let source_checkout_path = api_request.source_checkout_path.clone();
+        let source_repo_root = api_request.source_repo_root.clone();
+        let preparation_rules = self.state.worktree_preparations.clone();
         let event_tx = self.event_tx.clone();
         let finished = crate::events::WorktreeAddResult {
             path: checkout_path,
@@ -201,20 +204,34 @@ impl App {
             "herdr-worktree-add",
             finished,
             move |mut finished| {
-                finished.result = if let Some(parent_dir) = parent_dir {
-                    std::fs::create_dir_all(&parent_dir).map_err(|err| err.to_string())
-                } else {
+                finished.result = (|| -> Result<(), String> {
+                    let preparation = crate::worktree::preparation::for_repository(
+                        &source_repo_root,
+                        &preparation_rules,
+                    )?;
+                    if let Some(parent_dir) = parent_dir {
+                        std::fs::create_dir_all(&parent_dir).map_err(|err| err.to_string())
+                    } else {
+                        Ok(())
+                    }
+                    .and_then(|()| {
+                        crate::worktree::run_worktree_add_command(
+                            &source_checkout_path,
+                            &finished.path,
+                            &branch,
+                            &base,
+                            params.trust_repository,
+                        )
+                    })?;
+                    let command = (|| {
+                        crate::worktree::preparation::copy_files(&source_checkout_path, &finished.path, &preparation.copy_files)?;
+                        crate::worktree::preparation::command(&finished.path, &preparation)
+                    })().map_err(|err| format!("worktree created and retained at {}; preparation failed: {err}. Use worktree open to inspect it", finished.path.display()))?;
+                    if let Some(api) = finished.api_request.as_mut() {
+                        api.preparation_command = command;
+                    }
                     Ok(())
-                }
-                .and_then(|()| {
-                    crate::worktree::run_worktree_add_command(
-                        &source_checkout_path,
-                        &finished.path,
-                        &branch,
-                        &base,
-                        params.trust_repository,
-                    )
-                });
+                })();
                 let _ = event_tx.blocking_send(AppEvent::WorktreeAddFinished(Box::new(finished)));
             },
         );
@@ -487,6 +504,33 @@ impl App {
         self.state.mark_session_dirty();
         if created_workspace {
             self.emit_workspace_open_events(ws_idx);
+        }
+        if !api.preparation_command.is_empty() {
+            let preparation = if created_workspace {
+                self.start_worktree_preparation_command(
+                    ws_idx,
+                    &result.path,
+                    &api.preparation_command,
+                )
+            } else {
+                Err(std::io::Error::other(
+                    "checkout was already opened; setup was not launched again",
+                ))
+            };
+            if let Err(err) = preparation {
+                Self::send_api_response(
+                    api.respond_to,
+                    encode_error(
+                        api.id,
+                        "worktree_preparation_failed",
+                        format!(
+                            "worktree and workspace retained at {}; could not launch setup: {err}",
+                            result.path.display()
+                        ),
+                    ),
+                );
+                return;
+            }
         }
         let Some(worktree) = self.worktree_info_for_workspace(ws_idx) else {
             Self::send_api_response(

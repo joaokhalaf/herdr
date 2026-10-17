@@ -1190,6 +1190,16 @@ fn raw_command_shell(comspec: Option<std::ffi::OsString>) -> std::ffi::OsString 
         .unwrap_or_else(|| r"C:\Windows\System32\cmd.exe".into())
 }
 
+pub(crate) fn worktree_preparation_argv(command: &[String]) -> Vec<String> {
+    let launch = command
+        .iter()
+        .map(|arg| super::quote_powershell_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
+    vec!["powershell.exe".into(), "-NoLogo".into(), "-NoProfile".into(), "-NoExit".into(), "-Command".into(),
+        format!("$LASTEXITCODE = 0; & {launch}; $setupOk = $?; $setupExit = $LASTEXITCODE; if (-not $setupOk -and $setupExit -eq 0) {{ $setupExit = 1 }}; Write-Host \"`n[herdr] setup exited with status $setupExit\"")]
+}
+
 pub(crate) fn interactive_shell_command(argv: &[String], shell_name: &str) -> Option<String> {
     let shell_name = shell_name.to_ascii_lowercase();
     let powershell = shell_name.contains("powershell") || shell_name.contains("pwsh");

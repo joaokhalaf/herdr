@@ -139,8 +139,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn appearance_edits_preserve_custom_tokens_and_rows() {
-        let source = "[ui]\naccent = 'red'\nsidebar_width = 31\n[theme.custom]\naccent = '#010203'\ntext = '#112233'\n[theme.custom.light]\naccent = '#ffffff'\n[ui.sidebar.agents]\nrow_gap = 4\nrows = [[{ token = 'machine' }]]\n[ui.sidebar.spaces]\nrow_gap = 3";
+    fn appearance_edits_preserve_custom_tokens_rows_and_worktree_preparation() {
+        let source = "[ui]\naccent = 'red'\nsidebar_width = 31\n[theme.custom]\naccent = '#010203'\ntext = '#112233'\n[theme.custom.light]\naccent = '#ffffff'\n[ui.sidebar.agents]\nrow_gap = 4\nrows = [[{ token = 'machine' }]]\n[ui.sidebar.spaces]\nrow_gap = 3\n[[worktrees.prepare]]\nrepository = '/tmp/project'\ncopy_files = ['.env']\ncommand = ['sh', '-c', 'echo fixture']\n";
         let content = ConfigEdit::Appearance {
             borders: Some((crate::config::PaneBordersConfig::Off, false)),
             row_gap: Some(1),
@@ -161,6 +161,11 @@ mod tests {
         assert_eq!(config.ui.sidebar.agents.row_gap, 1);
         assert_eq!(config.ui.sidebar.spaces.row_gap, 1);
         assert_eq!(config.ui.sidebar.agents.rows.len(), 1);
+        assert_eq!(config.worktrees.prepare[0].copy_files, [".env"]);
+        assert_eq!(
+            config.worktrees.prepare[0].command,
+            ["sh", "-c", "echo fixture"]
+        );
         assert!(!ConfigEdit::Appearance {
             borders: None,
             row_gap: Some(2)

@@ -870,6 +870,22 @@ pub struct IndexedKeysConfig {
 pub struct WorktreesConfig {
     /// Root directory under which Herdr creates <repo>/<branch-slug> checkouts.
     pub directory: String,
+    /// Trusted, per-repository preparation rules, applied only to new checkouts.
+    pub prepare: Vec<WorktreePreparationConfig>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct WorktreePreparationConfig {
+    /// Absolute source repository path (~/ is supported).
+    pub repository: String,
+    /// Relative regular files to copy, without overwriting checkout files.
+    pub copy_files: Vec<String>,
+    /// Detect the project's JavaScript package manager and run install.
+    /// Opt-in; an explicit command takes precedence.
+    pub install_dependencies: bool,
+    /// Executable and arguments to run in a dedicated setup terminal tab.
+    pub command: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
@@ -1195,6 +1211,7 @@ impl Default for WorktreesConfig {
     fn default() -> Self {
         Self {
             directory: "~/.herdr/worktrees".into(),
+            prepare: Vec::new(),
         }
     }
 }
@@ -1584,6 +1601,32 @@ directory = "~/Projects/herdr-worktrees"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.worktrees.directory, "~/Projects/herdr-worktrees");
+    }
+
+    #[test]
+    fn worktree_preparation_is_opt_in_and_parses_per_repository_rules() {
+        assert!(Config::default().worktrees.prepare.is_empty());
+        let config: Config = toml::from_str(
+            r#"
+[[worktrees.prepare]]
+repository = "~/Projects/app"
+copy_files = [".env", "config/local.env"]
+install_dependencies = true
+command = ["pnpm", "install"]
+[[worktrees.prepare]]
+repository = "/work/other"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.worktrees.prepare.len(), 2);
+        assert_eq!(
+            config.worktrees.prepare[0].copy_files,
+            [".env", "config/local.env"]
+        );
+        assert_eq!(config.worktrees.prepare[0].command, ["pnpm", "install"]);
+        assert!(config.worktrees.prepare[0].install_dependencies);
+        assert!(!config.worktrees.prepare[1].install_dependencies);
+        assert!(config.worktrees.prepare[1].command.is_empty());
     }
 
     #[test]

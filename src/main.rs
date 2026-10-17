@@ -234,6 +234,13 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # [worktrees]
 # directory = "~/.herdr/worktrees"
 
+# Optional per-repository preparation, configured on the server running Git.
+# Files are copied before terminals open. The command runs in a separate setup tab.
+# [[worktrees.prepare]]
+# repository = "~/Projects/my-app"
+# copy_files = [".env", "config/local.env"]
+# command = ["pnpm", "install"]
+
 [ui]
 # Sidebar width (auto-scaled based on workspace names, this sets the default)
 # sidebar_width = 26

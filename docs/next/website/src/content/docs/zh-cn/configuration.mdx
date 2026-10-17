@@ -102,6 +102,21 @@ new_cwd = "follow"
 directory = "~/.herdr/worktrees"
 ```
 
+在可信的**服务器用户配置**中按仓库设置准备步骤，不会自动读取仓库内的配置文件:
+
+```toml
+[[worktrees.prepare]]
+repository = "~/Projects/my-app"
+copy_files = [".env", "config/local.env"]
+install_dependencies = true
+```
+
+`install_dependencies = true` 会优先读取**新检出目录**根目录 `package.json` 的 `packageManager`，否则通过 `pnpm-lock.yaml`、`package-lock.json` / `npm-shrinkwrap.json`、`bun.lock` / `bun.lockb` 或 `yarn.lock` 检测，并在 setup 标签页运行对应的 `install`。根目录 `package.json` 和检测文件必须为普通文件。信息缺失、无效、不支持或冲突时会报告准备错误并保留检出目录。Herdr 不会猜测默认值或安装包管理器本身；工具必须在服务器上可用。此选项默认为 false。显式 `command`（如 `command = ["pnpm", "install", "--frozen-lockfile"]`）优先于自动安装。其他语言和嵌套项目可使用自定义命令。
+
+规则按源仓库规范化后的绝对路径匹配，支持 `~/`。两个列表默认为空。只复制指定的普通文件，保留权限和相对目录，并在新终端启动前完成。文件缺失、符号链接、`.git`、目录穿越或覆盖已有目标文件都会报错；检出目录和分支会保留，可用 `worktree open` 检查。诊断不会包含文件内容。请在项目中将秘密文件排除在 Git 跟踪之外。
+
+命令在新检出目录的额外 **setup** 标签页运行，输出和退出码会保留，原 shell 标签页仍可使用。Linux/macOS 在命令结束后启动配置的 shell，Windows 保留 PowerShell。需要 shell 语法时显式配置，例如 `command = ["sh", "-c", "pnpm install && pnpm build"]`。创建成功表示命令已启动，并不表示执行成功。Ctrl+C 使用普通终端中断，可能关闭 setup 标签页。耗时命令不会占用创建 API 请求。打开或恢复已有 worktree 不会重跑准备步骤。编辑规则后重新加载服务器配置；进行中的创建使用开始时捕获的规则。
+
 终端创建表单可编辑 type、name 和 base ref。例如 `feat` 与 `Login Google` 会预览分支 `feat/login-google` 和目录 `feat-login-google`。type 可自由填写，建议值包括 `feat`、`fix`、`bug`、`refactor`、`chore`。空格和标点转换为连字符，常见拉丁字母重音会被移除。base 默认使用 `HEAD`。表单会提前提示与已登记检出目录的冲突，最终由 Git 验证操作。CLI 的分支语法和使用已有本地分支的行为保持不变。
 
 按 `prefix+s` 打开设置，选择 **sidebar** 可调整宽度、显示或隐藏 agents 与 spaces/worktrees，并恢复默认侧栏。更改立即应用并保存。两部分都隐藏时，桌面终端使用全部宽度，仍可通过 `prefix+s` 打开设置。**theme** 提供即时预览，Escape 取消预览；选择 `catppuccin` 可恢复默认主题。字体和透明度由终端模拟器设置。

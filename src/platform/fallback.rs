@@ -47,6 +47,11 @@ pub(super) fn read_terminal_grid_size() -> std::io::Result<(u16, u16)> {
     crossterm::terminal::size()
 }
 
+#[cfg(not(unix))]
+pub(crate) fn worktree_preparation_argv(command: &[String]) -> Vec<String> {
+    command.to_vec()
+}
+
 pub(crate) fn remote_ssh_config_paths() -> super::RemoteSshConfigPaths {
     super::RemoteSshConfigPaths {
         user_config: std::env::var_os("HOME")

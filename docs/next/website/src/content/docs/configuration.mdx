@@ -102,6 +102,21 @@ Set the root directory Herdr uses for Git worktree checkouts created from the si
 directory = "~/.herdr/worktrees"
 ```
 
+Configure preparation per repository in the trusted **server user config** (not in a file inside the repository):
+
+```toml
+[[worktrees.prepare]]
+repository = "~/Projects/my-app"
+copy_files = [".env", "config/local.env"]
+install_dependencies = true
+```
+
+Set `install_dependencies = true` to detect the package manager from the **new checkout** and run its `install` command in the setup tab. The root `package.json` field `packageManager` takes priority; otherwise Herdr recognizes `pnpm-lock.yaml`, `package-lock.json` / `npm-shrinkwrap.json`, `bun.lock` / `bun.lockb`, or `yarn.lock`. Detection requires a regular root `package.json` and regular metadata files. Missing, invalid, unsupported or ambiguous metadata reports a preparation error and retains the checkout. Herdr does not guess a default or install the package manager itself; the selected tool must be available on the server. This option defaults to false. An explicit `command`, such as `command = ["pnpm", "install", "--frozen-lockfile"]`, overrides automatic installation. Custom commands also support non-JavaScript projects and nested package roots.
+
+Rules match the original repository's canonical absolute path; `~/` is supported. Both lists default to empty; automatic dependency installation defaults to off. Only the listed regular files are copied, preserving permissions and nested paths, before any new workspace terminals start. Missing files, symlinks, `.git` paths, traversal and existing destination files cause an error; the new checkout and branch are retained for inspection with `worktree open`. No file contents are included in diagnostics. Keep copied secrets ignored by Git in your project.
+
+The executable and arguments run in the new checkout in an additional **setup** tab. Output and the exit code remain visible there after the command finishes; the original shell tab is available while setup runs. On Linux/macOS the setup tab opens the configured shell afterward; on Windows it keeps PowerShell open. For shell syntax, explicitly configure a shell, for example `command = ["sh", "-c", "pnpm install && pnpm build"]`. Creation succeeds when setup starts, not when the command completes. Ctrl+C uses normal terminal interruption and may close the setup tab. Long commands do not occupy the creation API request. Opening or restoring an existing worktree does not rerun preparation. Reload server configuration after editing these rules; a creation already in progress keeps the rules it started with.
+
 Herdr creates checkouts under `<directory>/<repo>/<branch-slug>`. For sibling-style checkouts, set this to a directory such as `~/Projects/herdr-worktrees`. Relative values are resolved to an absolute path when the app applies the config.
 
 The terminal creation dialog has editable type, name, and base-ref fields. For example, type `feat` and name `Login Google` preview `feat/login-google` and a `feat-login-google` checkout folder. Types are free text (`feat`, `fix`, `bug`, `refactor`, and `chore` are suggestions). Spaces and punctuation become hyphens; common Latin accents are folded. The base defaults to `HEAD`, so repositories using either `main` or `master` work. The dialog warns about registered checkout collisions before submission; Git validates the final operation. CLI creation keeps its existing branch syntax and existing-local-branch behavior.
