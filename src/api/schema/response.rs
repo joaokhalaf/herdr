@@ -278,6 +278,12 @@ pub enum ResponseResult {
         projection_revision: u64,
     },
     Ok {},
+    GitStatus {
+        status: super::git::GitStatusResult,
+    },
+    GitDiff {
+        diff: super::git::GitDiffResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

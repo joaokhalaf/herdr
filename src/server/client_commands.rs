@@ -245,6 +245,13 @@ mod tests {
         )))
         .expect("endpoint method shape fixture");
         let mut actual = endpoint_method_shape_digests();
+        assert_eq!(
+            (actual.remove("git.status"), actual.remove("git.diff")),
+            (
+                Some("252953ceadd6e5c16b70128e4d8bfaff3074ff885345c0e3296c2fc36f4a9575".into()),
+                Some("c655887e5d8ab44b22c0b59adbd944efb7a113ac390cc816bf3582c414349263".into())
+            )
+        );
         // Freeze additive methods separately without rewriting the published fixture.
         assert_eq!(
             actual.remove("pane.clear").as_deref(),

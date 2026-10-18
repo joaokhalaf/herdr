@@ -57,6 +57,7 @@ impl ClientContextMenuOverlay {
                 ..
             } => {
                 let mut items = vec![item("Rename pane", Action::RenamePane)];
+                items.push(item("Git changes...", Action::GitChanges));
                 if *has_manual_label {
                     items.push(item("Clear pane name", Action::ClearPaneName));
                 }
@@ -370,6 +371,7 @@ impl ClientShellState {
         };
 
         match action {
+            ClientContextMenuAction::GitChanges => self.open_git_view(pane_id, outcome),
             ClientContextMenuAction::RenamePane => {
                 let label = self.snapshot.as_deref().and_then(|snapshot| {
                     snapshot

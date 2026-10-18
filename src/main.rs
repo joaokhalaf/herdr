@@ -35,6 +35,7 @@ mod metadata_tokens;
 mod noninteractive_process;
 mod pane;
 use ghostty_vt::pane_graphics_files;
+mod git_changes;
 mod persist;
 mod platform;
 mod plugin_command;

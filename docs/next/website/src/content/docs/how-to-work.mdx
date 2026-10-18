@@ -31,6 +31,24 @@ If you want to end the session and stop its panes, stop the server:
 herdr server stop
 ```
 
+## Inspect an agent's Git changes
+
+Right-click a pane or an agent on the active machine and choose **Git changes...**.
+The read-only view shows the branch, checkout path, changed files, and the selected
+file's diff. Use the **local changes** and **staged** tabs to inspect each section.
+
+Click a file or use the arrow keys to select it. Scroll over the diff or use
+`PageUp` and `PageDown` to read it. Click **refresh** or press `r` to reload;
+`Escape` closes the view. Git queries run in the background on the selected
+machine, including SSH connections. The server must advertise support for the
+Git view; older servers can continue running without it.
+
+Changes belong to the checkout: agents sharing one worktree see the same files.
+The view follows the same terminal when its pane moves to another workspace.
+The view does not attribute individual edits to an agent. Line totals cover
+tracked text changes; untracked and binary files still appear in the file list.
+Large diffs are limited to a 256 KiB preview.
+
 ## Remote work through normal SSH
 
 SSH to the machine that has the code and credentials, then run Herdr there:

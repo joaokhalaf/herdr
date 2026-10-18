@@ -625,6 +625,9 @@ impl ClientShellState {
             return;
         }
 
+        if self.route_git_view_key(key, outcome) {
+            return;
+        }
         if self.route_worktree_overlay_key(key, outcome) {
             return;
         }

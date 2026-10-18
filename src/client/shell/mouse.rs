@@ -1442,6 +1442,9 @@ impl ClientShellState {
             }
             return;
         }
+        if self.route_git_view_mouse(mouse, outcome) {
+            return;
+        }
         if matches!(
             self.overlay,
             Some(
@@ -1848,6 +1851,30 @@ impl ClientShellState {
                     }
                 }
                 if !self.config.mouse_capture {
+                    return;
+                }
+                let agent = self
+                    .hits
+                    .endpoint_agents
+                    .iter()
+                    .find(|(rect, _, _)| super::contains(*rect, point))
+                    .map(|(_, endpoint, pane)| (endpoint.clone(), pane.clone()));
+                if let Some((endpoint, pane)) = agent {
+                    if endpoint == self.active_endpoint_id {
+                        self.open_pane_context_menu(pane, mouse.column, mouse.row);
+                        outcome.repaint = true;
+                    }
+                    return;
+                }
+                let agent = self
+                    .hits
+                    .agents
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .map(|(_, pane)| pane.clone());
+                if let Some(pane) = agent {
+                    self.open_pane_context_menu(pane, mouse.column, mouse.row);
+                    outcome.repaint = true;
                     return;
                 }
                 let workspace_id = (!self.sidebar_collapsed)

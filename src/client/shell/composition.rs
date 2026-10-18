@@ -681,6 +681,9 @@ impl ClientShellState {
                 self.hits.navigator_scroll_metrics = rendered.navigator_scroll_metrics;
                 self.hits.worktree_search = rendered.worktree_search;
                 self.hits.worktree_rows = rendered.worktree_rows;
+                self.hits.git_files = rendered.git_files;
+                self.hits.git_sections = rendered.git_sections;
+                self.hits.git_diff = rendered.git_diff;
                 self.hits.worktree_fields = rendered.worktree_fields;
                 self.hits.help_popup = rendered.help_popup;
                 self.hits.help_scrollbar = rendered.help_scrollbar;

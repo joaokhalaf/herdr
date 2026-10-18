@@ -516,6 +516,11 @@ impl ClientShellState {
         if let PendingEndpointKind::PaneLinkResolve { target } = pending.kind {
             return self.complete_link_hover(target, result);
         }
+        if let PendingEndpointKind::GitRead { token } = pending.kind {
+            let mut outcome = ClientShellInput::default();
+            self.complete_git_read(token, result, &mut outcome);
+            return (outcome.repaint, outcome.actions);
+        }
         if result.is_ok() {
             let timeout_key = ClientEndpointNoticeKey {
                 boot_id: boot_id.to_owned(),
@@ -567,6 +572,7 @@ impl ClientShellState {
             }
         }
         match pending.kind {
+            PendingEndpointKind::GitRead { .. } => return (false, Vec::new()),
             PendingEndpointKind::Generic => {}
             PendingEndpointKind::PaneLinkResolve { .. } => unreachable!("handled above"),
             PendingEndpointKind::ProductAnnouncementDismiss { version, id } => {
