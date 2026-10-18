@@ -2151,6 +2151,52 @@
           ],
           "type": "object"
         },
+        "GitDiffParams": {
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "root": {
+              "description": "Checkout identity from git.status; reject a target that has changed checkout.",
+              "type": "string"
+            },
+            "section": {
+              "$ref": "#/schemas/request/$defs/GitSection",
+              "default": "local"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "root",
+            "path"
+          ],
+          "type": "object"
+        },
+        "GitSection": {
+          "enum": [
+            "local",
+            "staged"
+          ],
+          "type": "string"
+        },
+        "GitStatusParams": {
+          "properties": {
+            "section": {
+              "$ref": "#/schemas/request/$defs/GitSection",
+              "default": "local"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        },
         "IntegrationInstallParams": {
           "properties": {
             "target": {
@@ -6312,6 +6358,38 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "git.status",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/GitStatusParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "git.diff",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/GitDiffParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -7484,6 +7562,103 @@
             "layout_updated"
           ],
           "type": "string"
+        },
+        "GitDiffResult": {
+          "properties": {
+            "binary": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "text",
+            "truncated",
+            "binary"
+          ],
+          "type": "object"
+        },
+        "GitFileChange": {
+          "properties": {
+            "added": {
+              "description": "None for binary or untracked files.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "old_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "removed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "status"
+          ],
+          "type": "object"
+        },
+        "GitSection": {
+          "enum": [
+            "local",
+            "staged"
+          ],
+          "type": "string"
+        },
+        "GitStatusResult": {
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "files": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/GitFileChange"
+              },
+              "type": "array"
+            },
+            "root": {
+              "type": "string"
+            },
+            "section": {
+              "$ref": "#/schemas/success_response/$defs/GitSection"
+            },
+            "terminal_id": {
+              "description": "Stable runtime identity for subsequent reads, including after a pane move.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "root",
+            "branch",
+            "section",
+            "files"
+          ],
+          "type": "object"
         },
         "InstalledPluginInfo": {
           "properties": {
@@ -10413,6 +10588,38 @@
               },
               "required": [
                 "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "status": {
+                  "$ref": "#/schemas/success_response/$defs/GitStatusResult"
+                },
+                "type": {
+                  "const": "git_status",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "status"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "diff": {
+                  "$ref": "#/schemas/success_response/$defs/GitDiffResult"
+                },
+                "type": {
+                  "const": "git_diff",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "diff"
               ],
               "type": "object"
             }

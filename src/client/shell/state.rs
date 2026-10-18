@@ -132,6 +132,9 @@ pub(super) struct ShellHitMap {
     pub(super) worktree_search: Rect,
     pub(super) worktree_rows: Vec<(Rect, usize)>,
     pub(super) worktree_fields: Vec<(Rect, usize)>,
+    pub(super) git_files: Vec<(Rect, usize)>,
+    pub(super) git_sections: Vec<(Rect, crate::api::schema::GitSection)>,
+    pub(super) git_diff: Rect,
     pub(super) help_popup: Rect,
     pub(super) help_scrollbar: Rect,
     pub(super) help_scroll_metrics: Option<crate::pane::ScrollMetrics>,
@@ -285,6 +288,7 @@ pub(super) enum ClientShellMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientShellOverlayKind {
+    GitChanges,
     Onboarding,
     ProductAnnouncement,
     ReleaseNotes,
@@ -545,6 +549,7 @@ pub(super) struct ClientWorktreeRemoveOverlay {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientContextMenuAction {
+    GitChanges,
     Rename,
     Close,
     NewWorktree,
@@ -616,6 +621,7 @@ pub(super) struct ClientConfirmCloseOverlay {
 
 #[derive(Debug)]
 pub(super) enum ClientShellOverlay {
+    GitChanges(super::git_view::ClientGitOverlay),
     Onboarding,
     ProductAnnouncement(crate::app::state::ProductAnnouncementState),
     ReleaseNotes(crate::app::state::ReleaseNotesState),
@@ -634,6 +640,7 @@ pub(super) enum ClientShellOverlay {
 impl ClientShellOverlay {
     pub(super) fn kind(&self) -> ClientShellOverlayKind {
         match self {
+            Self::GitChanges(_) => ClientShellOverlayKind::GitChanges,
             Self::Onboarding => ClientShellOverlayKind::Onboarding,
             Self::ProductAnnouncement(_) => ClientShellOverlayKind::ProductAnnouncement,
             Self::ReleaseNotes(_) => ClientShellOverlayKind::ReleaseNotes,
@@ -653,6 +660,9 @@ impl ClientShellOverlay {
 
 #[derive(Debug)]
 pub(super) enum PendingEndpointKind {
+    GitRead {
+        token: u64,
+    },
     Generic,
     ProductAnnouncementDismiss {
         version: String,

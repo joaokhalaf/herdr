@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 mod agent_view;
 mod agents;
 mod env;
+mod git;
 mod integrations;
 mod layouts;
 mod panes;
@@ -1081,6 +1082,13 @@ impl App {
             }
             Method::WorkspaceClose(target) => {
                 return self.handle_workspace_close(request.id, target);
+            }
+            Method::GitStatus(_) | Method::GitDiff(_) => {
+                return responses::encode_error(
+                    request.id,
+                    "invalid_request",
+                    "Git reads are handled asynchronously by the app runtime",
+                );
             }
             Method::WorktreeList(_) | Method::WorktreeOpen(_) => {
                 return responses::encode_error(

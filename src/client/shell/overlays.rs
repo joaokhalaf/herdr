@@ -1,5 +1,6 @@
 use super::*;
 
+mod git_overlay;
 mod settings_overlay;
 mod worktree_overlays;
 
@@ -18,6 +19,9 @@ pub(crate) struct OverlayRender {
     pub(crate) worktree_search: Rect,
     pub(crate) worktree_rows: Vec<(Rect, usize)>,
     pub(crate) worktree_fields: Vec<(Rect, usize)>,
+    pub(crate) git_files: Vec<(Rect, usize)>,
+    pub(crate) git_sections: Vec<(Rect, crate::api::schema::GitSection)>,
+    pub(crate) git_diff: Rect,
     pub(crate) help_popup: Rect,
     pub(crate) help_scrollbar: Rect,
     pub(crate) help_scroll_metrics: Option<crate::pane::ScrollMetrics>,
@@ -58,6 +62,7 @@ pub(crate) fn render_client_overlay(
         }
     }
     match o {
+        ClientShellOverlay::GitChanges(view) => git_overlay::render_git_overlay(b, view, p),
         ClientShellOverlay::Onboarding => render_onboarding_overlay(b, k, p),
         ClientShellOverlay::ProductAnnouncement(v) => render_product_announcement_overlay(b, v, p),
         ClientShellOverlay::ReleaseNotes(v) => {

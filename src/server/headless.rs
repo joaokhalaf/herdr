@@ -3034,6 +3034,13 @@ impl HeadlessServer {
             let _ = msg.respond_to.send(response);
             return changed;
         }
+        if matches!(
+            &msg.request.method,
+            api::schema::Method::GitStatus(_) | api::schema::Method::GitDiff(_)
+        ) {
+            self.app.start_git_api_read(msg.request, msg.respond_to);
+            return changed;
+        }
         let alt_screen_read_spec = self.alt_screen_read_spec(&msg.request);
         if matches!(&msg.request.method, api::schema::Method::AgentPrompt(_)) {
             let deferred_changed = self

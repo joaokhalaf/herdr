@@ -252,6 +252,7 @@ mod close_tab;
 mod copy;
 mod endpoint_requests;
 mod endpoints;
+mod git_view;
 mod graphics;
 mod input_conformance;
 #[path = "input.rs"]

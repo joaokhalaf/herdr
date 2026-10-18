@@ -4,6 +4,7 @@ pub mod agents;
 pub mod commands;
 pub mod common;
 pub mod events;
+pub mod git;
 pub mod integrations;
 pub(crate) mod operations;
 pub mod panes;
@@ -19,6 +20,7 @@ pub use agents::*;
 pub use commands::*;
 pub use common::*;
 pub use events::*;
+pub use git::*;
 pub use integrations::*;
 pub use panes::*;
 pub use plugins::*;
@@ -145,6 +147,8 @@ operations::define_operations! {
     PluginPaneOpen(PluginPaneOpenParams) => "plugin.pane.open", true, false;
     PluginPaneFocus(PluginPaneFocusParams) => "plugin.pane.focus", true, false;
     PluginPaneClose(PluginPaneCloseParams) => "plugin.pane.close", true, false;
+    GitStatus(GitStatusParams) => "git.status", false, true;
+    GitDiff(GitDiffParams) => "git.diff", false, true;
 }
 
 #[cfg(test)]
